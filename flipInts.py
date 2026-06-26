@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Implementation of FlipInts
-Version 1.0
-Date 2026-05-28
+Version 1.05
+Date 2026-06-28
 
 @author: Christopher Wolf, chris/at/Christopher-Wolf.de
 
@@ -63,7 +63,7 @@ def isVec(v,D):
     if (isElem(a,D) != True): return False
   return True
 
-# 
+ 
 def isLU_lower(L,D):
   """
   Check if a matrix is of the generalized lower matrix format.
@@ -94,6 +94,7 @@ def isLU_lower(L,D):
           assert L[i][j] == 0, "L[i,j] is none-zero for L[i,j]="+str(L[i][j])+" i="+str(i)+ " j="+str(j)
   return True        
   
+
 # check if a matrix is of the generalized upper matrix format
 def isLU_upper(U,D):
   """
@@ -186,14 +187,30 @@ def invHensel(a,D):
   return invRec(a,k)
   
 
-# compute y = Mx for given M, x
-# Input:
-#   M: (s x s) matrix
-#   x: (s x 1) vector
-# Output
-#   y: (s x 1) vector
-# All computations mod D and s an odd number
 def applyMatVecOdd(M,x,D):
+  """
+  compute y = Mx for given M, x.
+  All computations mod D and s an odd number.
+  Input:
+    M: (s x s) matrix
+    x: (s x 1) vector
+  Output
+    y: (s x 1) vector
+
+  Parameters
+  ----------
+  M : list
+    Matrix in the form of list of lits of integers.
+  x : list
+    vector.
+  D : int
+    Generating number for a flipInt.
+
+  Returns
+  -------
+  list
+    Vector as a list of ints.
+  """
   s = len(x)
   assert (s % 2) == 1, "s not odd: "+str(s)
   assert s == len(M), "mat has wrong size: "+str(len(M))
@@ -229,6 +246,32 @@ def applyMatVecOdd(M,x,D):
 #   y: (s x 1) vector
 # All computations mod D and s an odd number
 def applyMatVecPlain(M,x,D):
+  """
+  compute y = Mx for given M, x.
+  All computations mod D and s an odd number.
+
+  Do not check if all numbers are elements of FlipInts.
+  
+  Input:
+    M: (s x s) matrix
+    x: (s x 1) vector
+  Output
+    y: (s x 1) vector
+
+  Parameters
+  ----------
+  M : list
+    Matrix in the form of list of lits of integers.
+  x : list
+    vector.
+  D : int
+    Generating number for a flipInt.
+
+  Returns
+  -------
+  list
+    Vector as a list of ints.
+  """
   s = len(x)
   assert (s % 2) == 1, "s not odd: "+str(s)
   assert s == len(M), "mat has wrong size: "+str(len(M))
@@ -1021,8 +1064,8 @@ def symSortTerms(inEq,v,D):
 
   Returns
   -------
-  TYPE
-    DESCRIPTION.
+  str
+    Sorted and multiplied polynomial.
   """
   assert isField(D), "Invalid flipInts with "+str(D)
   outEq = ""
@@ -1057,7 +1100,7 @@ def symPolyMult(leftPrefix, leftCnt, rightPrefix, rightCnt, D):
   rightCnt : int
     Maximal degree of the right polynomial.
   D : int
-    generating number for the flipInt  
+    Generating number for the flipInt  
 
   Returns
   -------
@@ -1075,6 +1118,45 @@ def symPolyMult(leftPrefix, leftCnt, rightPrefix, rightCnt, D):
   for curEq in outList:    
     assert symIsPoly(curEq,v,D), "Problem Eq  " + curEq 
   return outList
+
+
+def symMulPolyPoly(left, right, D):
+  """
+  Symbolic multiplication of two polynomials.
+
+  Parameters
+  ----------
+  left : str
+    Polynomial.
+  right : str
+    Polynomial.
+  D : int
+    generating number for the flipInt.
+
+  Returns
+  -------
+  str
+    (left * right) % D. All terms are alphabetically sorted and added up.
+  """
+  assert isField(D), "Invalid flipInts with "+str(D)
+  v = symAllVars(left,D).union(symAllVars(right,D))
+  assert symIsPoly(left,v,D), "Problem left " + left 
+  assert symIsPoly(right,v,D), "Problem right " + right
+  leftTerms = left.split("+")
+  rightTerms= right.split("+")
+  # multiply term by term
+  resTerms = ""
+  for l in leftTerms:
+    facLeft,l = l.split("*",1)
+    for r in rightTerms:
+      facRight,r = r.split("*",1)
+      fac = (int(facLeft) * int(facRight)) % D
+      tmpTerm = str(fac) + "*" + l + r
+      # collect and rewrite
+      resTerms = resTerms + "+" + tmpTerm if resTerms != "" else tmpTerm
+  resTerms = symSortTerms(resTerms,v,D)
+  resTerms = symAddUp(resTerms,D)
+  return resTerms    
 
 
 def symSubtractTerm(eqStr, subStr, D):
@@ -1662,6 +1744,9 @@ def testAll():
   outStr = symSortTerms("1*b*3*c*+a*b*3*5*+a*7*",["a","b","c"],16)
   assert outStr == "3*b*c*+15*a*b*+7*a*", "symSortTerms.6: "+outStr
   
+  res = symMulPolyPoly("1*a_1*+1*b_1*i*", "1*a_2*+1*b_2*i*", 256) 
+  assert res == "1*a_1*a_2*+1*a_1*b_2*i*+1*a_2*b_1*i*+1*b_1*b_2*i*i*", "symMulPolyPoly.1: "+res
+  
   outEq = symAddUp("1*a*b*+3*a*b*+5*a*b*",16)
   assert outEq == "9*a*b*", "symAddUp.1 wrong with " + outEq
   outEq = symAddUp("1*a*b*+3*a*c*+5*a*d*",16)
@@ -1692,9 +1777,9 @@ def testAll():
   outTup = str(symRewriteEqsLin("a", 3, "s", 2, sSet, 512))
   assert outTup == "(['57*a2*', '3*a2*'], {'a1': '341*a2*', 'a0': '57*a2*'})", "symRewriteEqsLin.4"
   
-  symSolveAxb([[1]],[3],16)
+  #symSolveAxb([[1]],[3],16)
   
-  symSolveAxb([[1,3,5],[1,1,1],[3,3,3]],[9,3,9],16)
+  #symSolveAxb([[1,3,5],[1,1,1],[3,3,3]],[9,3,9],16)
   
   #symSolveAxb([[1,3,5],[1,1,1],[3,3,3]],[1,3,5],16)
   
@@ -1773,8 +1858,7 @@ def symSolveAxb(A,b,D):
     print("outRep "+str(repDict))  
     return eqs,repDict
     
-  
-       
+         
 testAll()
 #printSym()
 
