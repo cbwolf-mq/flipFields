@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 Implementation of FlipPolys
-Version 1.05
-Date 2026-06-28
+Version 1.07
+Date 2026-07-03
 
 @author: Christopher Wolf, chris/at/Christopher-Wolf.de
+
+For more information, see https://eprint.iacr.org/2026/1088
+
 
 The programme is under GNU General Public License v3, but not any later version.
 https://www.gnu.org/licenses/gpl-3.0.html

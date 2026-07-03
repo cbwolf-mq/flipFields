@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 Implementation of FlipFields
-Version 1.05
-Date 2026-06-28
+Version 1.07
+Date 2026-07-03
 
 @author: Christopher Wolf, chris/at/Christopher-Wolf.de
+
+For more information, see https://eprint.iacr.org/2026/1088
+
 
 The programme is under GNU General Public License v3, but not any later version.
 https://www.gnu.org/licenses/gpl-3.0.html
@@ -23,8 +26,10 @@ FlipInts and FlipPolys care found in the corresponding files.
 import datetime
 import math
 import random
+import numpy 
+import scipy
 from dataclasses import dataclass
-import itertools
+import matplotlib.pyplot as plt
 
 #import flipPolys
 
@@ -180,6 +185,30 @@ def isMultiPoly(p,maxDeg,N,D):
       if int(txtList[i-1]) > int(txtList[i]): return False
     
   return True
+
+
+def avgLists(inLists):
+  """ 
+  Computes the numerical average of the input lists. The lists can have different length.
+  
+  Parameters
+  ----------
+  inLists : list
+    List of lists of numbers
+    
+  Returns 
+  list 
+    One single list that contains the numerical average of all other lists at this position
+  """
+  resList = []
+  maxLen = max([ len(l) for l in inLists ])
+  for i in range(maxLen):
+    s = 0; numSum = 0
+    for j in range(len(inLists)):
+      if i < len(inLists[j]): s += inLists[j][i]; numSum += 1
+    resList.append(s / numSum)  
+  return resList    
+
 
 ############################################################################
 ## poly transfer functions
@@ -1455,7 +1484,699 @@ def plotGens():
     outStr += "d={}, D={} --- numGen={}\n\n".format(d,D,numGen)
     plotState(prefix,saveState,outStr) 
 
+#########################################################################
+# genetic algorithm for statistical purposes
 
+def statGAsplitWM(wm):
+  """
+  Splits a working mode (wm) string into its parts.
+  Returns them as a dictionary.
+  
+  Example strings: 
+    Db,3 - double binomial statistics, s=3
+    b,5 - Binomial statistits, s=5
+
+  Parameters
+  ----------
+  wm : str
+    Working mode string.
+
+  Returns
+  -------
+  dict
+    working mode dictionary.
+  """
+  wmDict = {}
+  for s in wm.split(","):
+    if s in ["Db","Dp","Sb","Sp","b","p"]: wmDict["stat"] = s; continue
+    if s.isdigit(): wmDict["data"] = int(s); continue
+    assert False, "Wrong format for working mode with +++{}+++".format(wm)
+  return wmDict  
+
+
+def statGiveData(wm):
+  """
+  Returns the data for the given statistical experiment.
+  Data is aggregated via the function printNumVecResponsive().
+
+  Parameters
+  ----------
+  wm : dict
+    Working mode
+
+  Returns
+  -------
+  data : list
+    list of list of list. Data as list of integers.
+  label : list
+    Corresponding label, e.g. "n=5, d=2".
+  """
+  outNum = wm["data"]
+  data = []; label = []
+  match outNum:
+    case 3:
+      # Stat n=3 d=2 with rep=99999 and sum=12783
+      label.append("s=3, d=2")
+      data.append([0, 3, 12, 27, 52, 52, 100, 141, 224, 251, 321, 354, 393, 367, 352, 299, 312, 264, 350, 365, 491, 619, 706, 787, 841, 872, 843, 790, 647, 540, 443, 335, 230, 151, 103, 59, 50, 20, 6, 3, 4, 3, 0, 1])
+      # Stat n=3 d=3 with rep=99999 and sum=13582
+      label.append("s=3, d=3")
+      data.append([5, 26, 81, 104, 127, 202, 169, 223, 254, 303, 347, 375, 418, 377, 407, 357, 328, 290, 350, 410, 446, 611, 711, 789, 816, 827, 880, 749, 610, 538, 437, 366, 225, 145, 102, 79, 47, 22, 15, 10, 1, 3])
+      # Stat n=3 d=7 with rep=99999 and sum=13686
+      label.append("s=3, d=7")
+      data.append([43, 53, 100, 128, 140, 174, 181, 230, 241, 314, 324, 409, 404, 385, 329, 294, 313, 317, 335, 438, 478, 588, 714, 766, 880, 825, 899, 774, 645, 559, 438, 340, 215, 158, 111, 62, 35, 26, 10, 7, 3, 1])
+      # Stat n=3 d=10 with rep=99999 and sum=13621
+      label.append("s=3, d=10")
+      data.append([33, 52, 86, 127, 136, 159, 193, 225, 261, 295, 322, 351, 404, 379, 359, 341, 312, 301, 331, 405, 479, 631, 639, 756, 861, 902, 870, 774, 664, 564, 412, 346, 214, 155, 118, 78, 37, 24, 5, 6, 7, 6, 1])
+      # Stat n=3 d=128 with rep=99999 and sum=13528
+      label.append("s=3, d=128")
+      data.append([31, 68, 105, 123, 153, 155, 202, 244, 262, 298, 335, 348, 411, 351, 302, 323, 307, 315, 295, 373, 533, 624, 671, 740, 899, 841, 863, 750, 709, 556, 430, 311, 225, 143, 92, 62, 33, 14, 17, 6, 7, 1])
+      # Stat n=3 d=256 with rep=99999 and sum=13594
+      label.append("s=3, d=256")
+      data.append([26, 55, 75, 113, 165, 184, 205, 239, 266, 292, 342, 361, 404, 368, 339, 324, 268, 329, 346, 436, 519, 627, 706, 824, 780, 884, 778, 765, 646, 562, 405, 320, 212, 180, 114, 57, 31, 25, 12, 7, 3])
+      # Stat n=3 d=384 with rep=99999 and sum=13527
+      label.append("s=3, d=384")
+      data.append([23, 68, 63, 98, 161, 173, 186, 226, 265, 292, 337, 383, 376, 368, 409, 305, 294, 302, 304, 436, 482, 611, 733, 795, 847, 877, 800, 732, 676, 546, 358, 327, 242, 161, 110, 60, 50, 25, 11, 8, 4, 2, 1])
+      # Stat n=3 d=512 with rep=99999 and sum=13636
+      label.append("s=3, d=512")
+      data.append([27, 53, 68, 139, 149, 167, 201, 191, 240, 333, 298, 372, 414, 389, 336, 346, 310, 300, 315, 379, 523, 635, 742, 792, 878, 815, 818, 786, 659, 524, 457, 329, 206, 188, 80, 64, 49, 23, 20, 13, 4, 2, 2])
+
+    case 5: 
+      #Stat n=5 d=2 with rep=99999 and sum=2785
+      label.append("n=5, d=2")
+      data.append([85, 150, 277, 307, 374, 379, 360, 280, 212, 161, 105, 46, 29, 12, 4, 3, 0, 0, 0, 0, 1])
+      #Stat n=5 d=3 with rep=99999 and sum=2862
+      label.append("n=5, d=3")
+      data.append([120, 207, 272, 314, 370, 393, 365, 301, 201, 151, 83, 39, 20, 12, 6, 4, 3, 0, 1])
+      # Stat n=5 d=7 with rep=99999 and sum=2820
+      label.append("n=5, d=7")
+      data.append([103, 192, 275, 316, 375, 378, 320, 311, 240, 147, 92, 42, 20, 6, 3])
+      #Stat n=5 d=10 with rep=99999 and sum=2860
+      label.append("n=5, d=10")
+      data.append([129, 195, 282, 341, 372, 378, 317, 289, 222, 152, 84, 44, 32, 12, 8, 3])
+      #Stat n=5 d=128 with rep=99999 and sum=2904
+      label.append("n=5, d=128")
+      data.append([81, 198, 264, 329, 381, 404, 346, 331, 228, 151, 98, 43, 31, 13, 5, 0, 0, 1])
+      #Stat n=5 d=256 with rep=99999 and sum=2871
+      label.append("n=5, d=256")
+      data.append([97, 204, 273, 312, 366, 365, 346, 276, 259, 172, 92, 54, 38, 9, 6, 2])
+      #Stat n=5 d=384 with rep=99999 and sum=2794
+      label.append("n=5, d=384")
+      data.append([119, 179, 273, 333, 346, 369, 350, 305, 213, 142, 70, 49, 35, 9, 1, 0, 1])
+      #Stat n=5 d=512 with rep=99999 and sum=2972
+      label.append("n=5, d=512")
+      data.append([112, 187, 284, 324, 397, 394, 372, 306, 238, 156, 100, 57, 28, 11, 3, 2, 1])
+      
+    case 7: 
+      #Stat n=7 d=2 with rep=99999 and sum=686
+      label.append("n=7, d=2")
+      data.append([190, 239, 149, 80, 22, 5, 1])
+      #Stat n=7 d=3 with rep=99999 and sum=689
+      label.append("n=7, d=3")
+      data.append([238, 234, 124, 62, 25, 5, 1])
+      #Stat n=7 d=7 with rep=99999 and sum=670
+      label.append("n=7, d=7")
+      data.append([198, 235, 149, 66, 14, 5, 1, 2])
+      #Stat n=7 d=10 with rep=99999 and sum=690
+      label.append("n=7, d=10")
+      data.append([253, 194, 135, 69, 23, 12, 1, 2, 1])
+      #Stat n=7 d=128 with rep=99999 and sum=675
+      label.append("n=7, d=128")
+      data.append([211, 228, 135, 69, 24, 7, 1])
+      #Stat n=7 d=256 with rep=99999 and sum=685
+      label.append("n=7, d=256")
+      data.append([222, 214, 130, 76, 28, 14, 1])
+      #Stat n=7 d=384 with rep=99999 and sum=741
+      label.append("n=7, d=384")
+      data.append([246, 245, 152, 58, 29, 8, 3])
+      #Stat n=7 d=512 with rep=99999 and sum=734
+      label.append("n=7, d=512")
+      data.append([215, 249, 153, 77, 34, 1, 4, 1])
+      
+    case _: assert False, "Wrong working mode with "+str(wm)
+  return data, label  
+# end statGiveData  
+
+
+def statGAfitness(wm,training,gene,point=None):
+  """
+  Computes the fitness as difference between the expected and the predicted values via a quadratic norm.
+  The result is a positive integer. The smaller the integer, the better the fit, the better the fitness.
+
+  Parameters
+  ----------
+  wm : dict
+    Working mode.
+  training : list
+    Empirical results, to be fit via the information from the gene.
+  gene : dict
+    Data that is needed for the fitting algorithm.
+  point : int, default None
+    returns a single point instead of the full fitness. 
+
+  Returns
+  -------
+  int
+    Non-negative integer. 0 is a perfect fit, all positiv number give a less and less good fit.
+  """
+  stat = wm["stat"]
+  match stat:
+    case "Db": 
+      prediction = ( 
+        gene["stretchOne"] * scipy.stats.binom.pmf(numpy.arange(len(training)), gene["nGuessOne"], gene["pGuessOne"], gene["locOne"]) 
+        + gene["stretchTwo"] * scipy.stats.binom.pmf(numpy.arange(len(training)), gene["nGuessTwo"], gene["pGuessTwo"], gene["locTwo"]) 
+      )  
+    
+    case "Sb": 
+      gene["split"] = round(gene["split"])
+      if gene["split"] < 0: gene["split"] = 0
+      s = gene["split"]
+      firstTraining = training[:s]
+      secondTraining = training[s:]
+      firstPrediction = gene["stretchOne"] * scipy.stats.binom.pmf(numpy.arange(len(firstTraining)), gene["nGuessOne"], gene["pGuessOne"], gene["locOne"]) 
+      secondPrediction = gene["stretchTwo"] * scipy.stats.binom.pmf(numpy.arange(len(secondTraining)), gene["nGuessTwo"], gene["pGuessTwo"], gene["locTwo"]) 
+      prediction = list(firstPrediction) + list(secondPrediction)
+        
+    case "Dp": 
+      prediction = (gene["stretchOne"] * scipy.stats.poisson.pmf(numpy.arange(len(training)), gene["muOne"],gene["locOne"])
+                    + 
+                    gene["stretchTwo"] * scipy.stats.poisson.pmf(numpy.arange(len(training)), gene["muTwo"],gene["locTwo"]))
+    
+    case "Sp": 
+      s = int(gene["split"])
+      assert s >= 0, "Wrong split with {}".format(s)
+      firstTraining = training[:s]
+      secondTraining = training[s:]
+      firstPrediction = gene["stretchOne"] * scipy.stats.poisson.pmf(numpy.arange(len(firstTraining)), gene["muOne"],gene["locOne"])
+      secondPrediction = gene["stretchTwo"] * scipy.stats.poisson.pmf(numpy.arange(len(secondTraining)), gene["muTwo"],gene["locTwo"])
+      prediction = list(firstPrediction) + list(secondPrediction)
+      
+    case "b":       
+      prediction = gene["stretch"] * scipy.stats.binom.pmf(numpy.arange(len(training)), gene["nGuess"], gene["pGuess"], gene["loc"])
+      
+    case "p":
+      prediction = gene["stretch"] * scipy.stats.poisson.pmf(numpy.arange(len(training)), gene["mu"],gene["loc"])
+      
+    case _: assert False, "Unknown wm with "+str(wm)  
+    
+  if point == None: 
+    chiSquare = sum([ (training[i]-prediction[i])**2/abs(prediction[i] if prediction[i] != 0 else 1) for i in range(len(prediction)) ])    
+    return float(chiSquare)  
+  return prediction[point] if point < len(prediction) else 0
+
+
+def statGAgiveInitialGene(wm):
+  """
+  Returns initial settings for the different fittings. These values have been created manually.
+
+  Parameters
+  ----------
+  wm : dict
+    Working mode.
+
+  Returns
+  -------
+  (dict,dict)
+    Gene with the corresponding parameters set, except fitness.
+    Rounding instructions
+  """
+  done = False
+  resDict = {}; roundDict = {}
+  resDict["fitness"] = -1
+          
+  if wm["stat"] == "b":  
+    roundDict["pGuess"] = 0.0001
+    roundDict["stretch"] = 1
+    roundDict["loc"] = 0.1
+    roundDict["nGuess"] = 0.1
+    # binomial distribution
+    match wm["data"]:
+      case 5: 
+        done = True
+        resDict = {'pGuess': 0.5473, 'stretch': 3356, 'loc': -7, 'nGuess': 23.0, 'fitness': 961.5805685969608}
+        
+      case 7:
+        done = True
+        resDict = {'pGuess': 0.5000, 'stretch': 2200, 'loc': -7, 'nGuess': 23.0, 'fitness': 5930}
+  # end wm[stat] = b
+  
+  if wm["stat"] == "p":
+    # poisson distribution
+    roundDict["stretch"] = 1
+    roundDict["mu"] = 0.01   
+    roundDict["loc"] = 0.1
+
+    match wm["data"]:
+      case 5: 
+        done = True   
+        resDict = {'stretch': 2940, 'mu': 9.0, 'loc': -4, 'fitness': 33.188104337711664}       
+      case 7: 
+        done = True   
+        resDict = {'stretch': 2488, 'mu': 7.100000000000001, 'loc': -9, 'fitness': 41.45823453369279}
+  # end wm[stat] = p
+
+
+  if wm["stat"] == "Db":  
+    # double binomial distribution
+    roundDict["pGuessOne"] = 0.0001
+    roundDict["stretchOne"] = 1
+    roundDict["locOne"] = 0.01
+    roundDict["nGuessOne"] = 0.1
+    roundDict["pGuessTwo"] = 0.0001
+    roundDict["stretchTwo"] = 1
+    roundDict["locTwo"] = 0.01
+    roundDict["nGuessTwo"] = 0.1
+    match wm["data"]:
+      case 3: 
+        done = True
+        resDict = {'pGuessOne': 0.6801, 'stretchOne': 7000, 'locOne': 0.0, 'nGuessOne': 37.0, 
+                   'pGuessTwo': 0.2332, 'stretchTwo': 3000, 'locTwo': 0.0, 'nGuessTwo': 50.0, 
+                   'fitness': 58982.84671130601}
+        
+  
+  if wm["stat"] == "Sb":  
+    # double binomial distribution
+    roundDict["split"] = 1
+    roundDict["pGuessOne"] = 0.0001
+    roundDict["stretchOne"] = 1
+    roundDict["locOne"] = 0.01
+    roundDict["nGuessOne"] = 0.1
+    roundDict["pGuessTwo"] = 0.0001
+    roundDict["stretchTwo"] = 1
+    roundDict["locTwo"] = 0.01
+    roundDict["nGuessTwo"] = 0.1
+    match wm["data"]:
+      case 3: 
+        done = True
+        resDict = {'split': 17, 
+                   'pGuessOne': 0.5000, 'stretchOne': 3000, 'locOne': -10, 'nGuessOne': 40.0, 
+                   'pGuessTwo': 0.3000, 'stretchTwo': 6000, 'locTwo': -4.0, 'nGuessTwo': 40.0, 
+                   'fitness': -1}
+
+  
+  if wm["stat"] == "Dp":
+    # poisson distribution
+    resDict["fitness"] = -1
+    
+    roundDict["weight"] = 0.0001
+    roundDict["stretchOne"] = 1
+    roundDict["muOne"] = 0.01   
+    roundDict["locOne"] = 0.1
+    roundDict["stretchTwo"] = 1
+    roundDict["muTwo"] = 0.01   
+    roundDict["locTwo"] = 0.1
+
+    match wm["data"]:
+      case 3: 
+        done = True   
+        resDict = {'stretchOne': 2400, 'muOne': 5.09, 'locOne': 5, 
+                 'stretchTwo': 9100, 'muTwo': 17.36, 'locTwo': 7, 'fitness': 40850.64829886549}
+
+  
+  if wm["stat"] == "Sp":
+    # poisson distribution, split into two parts
+    resDict["fitness"] = -1
+    
+    roundDict["split"] = 1
+    roundDict["stretchOne"] = 1
+    roundDict["muOne"] = 0.01   
+    roundDict["locOne"] = 0.1
+    roundDict["stretchTwo"] = 1
+    roundDict["muTwo"] = 0.01   
+    roundDict["locTwo"] = 0.1
+  
+    match wm["data"]:
+      case 3:
+        done = True
+        resDict = {'split': 17, 'stretchOne': 3300, 'muOne': 13, 'locOne': -1.0, 
+                                'stretchTwo': 5000, 'muTwo': 7, 'locTwo': 0, 'fitness': -1,}
+  # end stat==Sp      
+          
+  assert done, "Wrong working mode with "+str(wm) 
+  return resDict, roundDict
+
+
+def statGAroundGene(roundDict,gene):
+  """
+  Rounds all values in the current gene according to the rounding policy of the current optimization trial.
+
+  Parameters
+  ----------
+  roundDict : dict
+    Rouncing policy for the different parameters.
+  gene : dict
+    Gene to be rounded.
+
+  Returns
+  -------
+  dict
+    Rounded gene.
+  """
+  for k in gene:
+    if k == "fitness": continue
+    # compute the rounding
+    target = 0
+    if roundDict[k] > 1:
+      while 10**target < roundDict[k]: target += 1
+    else:   
+      while 10**target > roundDict[k]: target -= 1
+    gene[k] = round(gene[k],-target)
+  return gene
+
+
+def statGAselect(inPop):
+  """
+  Selects a gene depending on its fitness. Lower values of fitness have a higher chance of being selected.
+  The function used is 1/f for f being the fitness
+  
+  Parameters
+  ----------
+  inPop : list
+    Population of genes.
+
+  Returns
+  -------
+  dict
+    Selected gene.
+  """
+  sumFit = sum([ 1.0/g["fitness"] for g in inPop])
+  i = -1
+  while (sumFit > 0) and (i < len(inPop)-1):
+    i += 1
+    sumFit -= inPop[i]["fitness"]
+  return inPop[i].copy()  
+  
+
+def statGAmutate(roundDict, gene, fixedParams, extremeMutation=False):
+  """
+  Mutates the given gene according to the values in round Dict.
+
+  Parameters
+  ----------
+  roundDict : dict
+    Rounding policy of the current optimization strategy.
+  gene : dict
+    Parameters for the current optimization problem.
+  fixedParams : set
+      Makes some parameters immutable. Gives them as an element of the set each.  
+  extremeMutation : bool
+    Increases mutation by an order of magnitute  
+    
+
+  Returns
+  -------
+  dict
+    New gene after mutation, could also be the same gene, unmutated.
+  """
+  outGene = gene.copy()
+  for k in gene:
+    if k == "fitness": continue
+    if k in fixedParams: continue
+    if extremeMutation: outGene[k] = gene[k] + random.randint(-20,20)*roundDict[k]
+    if random.randint(0,10) != 0: continue
+    outGene[k] = gene[k] + random.randint(-10,10)*roundDict[k]
+  return outGene  
+  
+
+
+def statGAcrossoverUniform(p1,p2):
+  """
+  Uses the crossover strategy to create two children for the two given parents.
+
+  Parameters
+  ----------
+  p1 : dict
+    Gene. First parent.
+  p2 : dict
+    Gene. Second parent.
+
+  Returns
+  -------
+  c1 : dict
+    First child.
+  c2 : dict
+    Second child.
+  """
+  c1 = {}; c2 = {}
+  for k in p1:
+    if k == "fitness": continue
+    if random.randint(0,1) == 0: c1[k] = p1[k]; c2[k] = p2[k]
+    else: c1[k] = p2[k]; c2[k] = p1[k]
+  return c1,c2
+
+
+def statGAcrossoverAverage(p1,p2, fixedParams):
+  """
+  Computes the average between the parameters of the two parents.
+
+  Parameters
+  ----------
+  p1 : dict
+    Gene. First parent.
+  p2 : dict
+    Gene. Second parent.
+  fixedParams : set
+    Makes some parameters immutable. Gives them as an element of the set each.  
+  
+  Returns
+  -------
+  c : dict
+    Only child.
+  """
+  c = {}
+  for k in p1:
+    if k == "fitness": continue
+    c[k] = (p1[k] + p2[k]) / 2 if not k in fixedParams else p1[k] # avoid rounding errors
+  return c
+
+
+def statGAgene2key(gene):
+  """
+  Generates a unique hash value for each gene. The fitness value is excluded.
+
+  Parameters
+  ----------
+  gene : dict
+    Parameters for the optimization problem.
+
+  Returns
+  -------
+  str
+    Hash for the current gene.
+  """
+  sortKeys = []
+  allKeys = filter(lambda x: x != "fitness", gene.keys())
+  for k in allKeys: sortKeys.append(k)
+  sortKeys.sort()
+  # create a key
+  return "; ".join( [ k+"="+str(gene[k]) for k in sortKeys ] )
+  
+
+def statGArun(onlyMutate = False, fixedParams=set(),maxVals={}):  
+  """
+  Executes the optimization algorithm for statistical data. All results are written to a file.
+  Using the switch "onlyMutate", it can be turned into a Evolutionary Strategy (ES)
+
+  Params
+  ------
+    onlyMutate : bool
+      Do not use the crossover operator in the algorithm, no extreme mutation.
+    fixedParams : set
+      Makes some parameters immutable. Gives them as an element of the set each.  
+    maxVals : dict
+      maximal values for the optimization
+
+  Returns
+  -------
+  None
+  """
+  wm = "Dp,3"
+  wm = statGAsplitWM(wm)
+  allData, allLabel = statGiveData(wm)
+  trainingData = avgLists(allData)
+  trainingLabel = allLabel[0].split(",",1)[0] + ", avg"
+  
+  maxRun = 1000; popSize = 1000; bestLen = 20
+  
+  prefix = "statGA"; outStr = ""; intState = {}
+  outStr += "Params: "+ str(trainingLabel)
+  plotState(prefix, intState, outStr)
+  
+  oldPop = [ ]
+  startGene,roundDict = statGAgiveInitialGene(wm)
+  startGene["fitness"] = statGAfitness(wm, trainingData, startGene)
+
+  # start with an intitial population  
+  for i in range(popSize): 
+    # no extreme mutation if we are in an ES
+    g = statGAmutate(roundDict, startGene, fixedParams, extremeMutation=not(onlyMutate))
+    g = statGAroundGene(roundDict, g)
+    g["fitness"] = statGAfitness(wm, trainingData, g)
+    if str(g["fitness"]) != "nan": oldPop.append(g)
+  
+  # initialize the loop
+  bestList = []
+  
+  runNum = -1
+  toRun = True
+  while toRun:
+    runNum += 1
+    # create a newPop
+    newPop = []
+    
+    for i in range(popSize):
+      p1 = statGAselect(oldPop)
+      p2 = statGAselect(oldPop)
+      
+      c1 = statGAmutate(roundDict, p1, fixedParams)
+      newPop.append(c1)
+      if not(onlyMutate):
+        c2,c3 = statGAcrossoverUniform(p1,p2)
+        c4 = statGAcrossoverAverage(p1,p2, fixedParams)
+        newPop.append(c2)
+        newPop.append(c3)
+        newPop.append(c4)
+    # remove too high values
+    for g in newPop:
+      for k in maxVals:
+        if g[k] > maxVals[k]: g[k] = maxVals[k]
+    # make sure they are correctly rounded
+    for i in range(len(newPop)):
+      n = newPop[i]
+      n = statGAroundGene(roundDict, n)
+      n["fitness"] = statGAfitness(wm, trainingData, n)
+      newPop[i] = n
+    # end generating new population
+    
+    # add the two lists together, sort them by fitness and remove doublicates
+    curPop = newPop
+    # Remove unwanted and double entries
+    curPop = filter(lambda g: str(g["fitness"]) != "nan", curPop)
+    noDouble = {}
+    for g in curPop: noDouble[statGAgene2key(g)] = g
+    curPop = [ noDouble[k] for k in noDouble ]
+    # sort
+    curPop.sort(key=lambda g: g["fitness"])
+    
+    oldPop = curPop[:popSize]
+    # keep our best results 
+    bestList.append(oldPop[0])
+    bestList.sort(key=lambda g: g["fitness"])
+    bestList = bestList[:bestLen]
+    outStr += "\n New List for run {} and {} \n".format(runNum,trainingLabel)
+    for p in bestList:
+      outStr += str(p) + "\n"
+    plotState(prefix, intState, outStr)  
+    
+    # check if we can leave the loop
+    if (statGAgene2key(bestList[0]) == statGAgene2key(bestList[-1])) and (bestLen == len(bestList)): toRun = False
+    if runNum > maxRun: toRun = False
+  print("Done gaStat")
+
+
+def statPaint():
+  # s = 3
+  # Run 873 and s=3, avg - fitted
+  #param = {'weight': 0.5913999999999997, 
+  #         'pGuessOne': 0.7647999999999996, 'stretchOne': 14127, 'locOne': 0.0, 'nGuessOne': 34.0, 
+  #         'pGuessTwo': 0.27179999999999943, 'stretchTwo': 9758, 'locTwo': 0.0, 'nGuessTwo': 34.0, 
+  #         'fitness': 55644.72874865864}
+  # s=3, avg - manual
+  #param = {'weight': 0.5914, 
+  #         'pGuessOne': 0.6200, 'stretchOne': 14000, 'locOne': 0.0, 'nGuessOne': 40.0, 
+  #         'pGuessTwo': 0.3000, 'stretchTwo': 8000, 'locTwo': 0.0, 'nGuessTwo': 40.0, 
+  #         'fitness': 55644.72874865864}
+
+  # b, s=5 manual
+  #wm = "b,5"
+  #param = {'pGuess': 0.5000, 'stretch': 2200, 'loc': -7, 'nGuess': 23.0, 'fitness': 5930}  
+  # New List for run 165 and n=5, avg 
+  # b5 - fitting
+  #param = {'pGuess': 0.5073, 'stretch': 2330, 'loc': -7, 'nGuess': 23.0, 'fitness': 4057.7813736216544}
+  
+  # p, s=5 fitting
+  #wm = "p,5"
+  #param = {'stretch': 2940, 'mu': 9.0, 'loc': -4, 'fitness': 33.188104337711664}
+  # p, 7 - manual
+  #wm = "p,7"
+  #param = {'stretch': 2488, 'mu': 7.100000000000001, 'loc': -9, 'fitness': 41.45823453369279}
+  # p,7 - fitting
+  #param = {'stretch': 2900, 'mu': 6.82, 'loc': -9, 'fitness': 39.17969322200599}
+  # b,7 - manual
+  #param = {'pGuess': 0.5000, 'stretch': 600, 'loc': -2, 'nGuess': 4.0}
+  # b,7 - fitting - New List for run 279 and n=7, avg 
+  #wm = "b,7"
+  #param = {'pGuess': 0.2822, 'stretch': 1460, 'loc': -7, 'nGuess': 23.0, 'fitness': 18.079273942319123}
+  
+  # Dp, s=3, fitting
+  wm = "Dp,3"
+  #param = {'fitness': 74171.19640282032, 'weight': 0.5991, 'stretchOne': 10005, 'muOne': 10.809999999999999, 'locOne': 0, 'stretchTwo': 10016, 'muTwo': 18.389999999999983, 'locTwo': 10}
+  # Dp3, manual
+  #param = {'stretchOne': 3000, 'muOne': 11.549999999999997, 'locOne': 1, 
+  #         'stretchTwo': 10137, 'muTwo': 17.969999999999978, 'locTwo': 7}
+  # Dp3, manual 
+  param = {'stretchOne': 2400, 'muOne': 5.09, 'locOne': 7, 
+           'stretchTwo': 9100, 'muTwo': 17.36, 'locTwo': 7, 'fitness': 98980.64767731426}  
+  # intermediate fitting I 
+  param = {'stretchOne': 2465, 'muOne': 5.01, 'locOne': 5, 
+           'stretchTwo': 9081, 'muTwo': 17.24, 'locTwo': 7, 'fitness': 41416.60648706726}
+  # fitting I - 0.01 mu
+  param = {'stretchOne': 2500, 'muOne': 4.97, 'locOne': 5, 
+           'stretchTwo': 9850, 'muTwo': 17.2, 'locTwo': 7, 
+           'fitness': 41189.4915289946}
+  # manual I - 0.01 mu
+  param = {'stretchOne': 2700, 'muOne': 6.97, 'locOne': 5, 
+           'stretchTwo': 9850, 'muTwo': 18.2, 'locTwo': 7}
+
+  # Db3 - manual
+  wm = "Db,3"
+  # Db3 - manual
+  param = {'pGuessOne': 0.6795, 'stretchOne': 7000, 'locOne': 0.0, 'nGuessOne': 37.0, 
+           'pGuessTwo': 0.2697, 'stretchTwo': 3500, 'locTwo': 0.0, 'nGuessTwo': 50.0, 
+           'fitness':  85495575123867.28}
+  
+  
+  # Sp, s=3, manual
+  #param = {'split': 17, 'stretchOne': 3300, 'muOne': 13, 'locOne': -1.0, 
+  #                      'stretchTwo': 5000, 'muTwo': 7, 'locTwo': 0, 'fitness': -1,}
+  # Sp, s=3, fitting
+  #param = {'split': 18, 'stretchOne': 3329, 'muOne': 13.529999999999998, 'locOne': -3.0, 
+  #                      'stretchTwo': 5157, 'muTwo': 7.01, 'locTwo': 0, 'fitness': 47479.63173918127}
+  # Sp, s=3, fitting
+  #param = {'split': 20, 'stretchOne': 4257, 'muOne': 14.659999999999997, 'locOne': -3.0, 
+  #                      'stretchTwo': 6720, 'muTwo': 7.939999999999997, 'locTwo': -2.0, 'fitness': 9583.791513065386}
+  
+  # Sb,3 - manual
+  #param = {'split': 17, 
+  #         'pGuessOne': 0.5000, 'stretchOne': 3000, 'locOne': -10, 'nGuessOne': 40.0, 
+  #         'pGuessTwo': 0.3000, 'stretchTwo': 6000, 'locTwo': -4.0, 'nGuessTwo': 40.0, 
+  #         'fitness': -1}
+  # Sb,3 - fitting run 229
+  #param = {'split': 18, 'pGuessOne': 0.5016, 'stretchOne': 3471, 'locOne': -10.0, 'nGuessOne': 41.0, 
+  #         'pGuessTwo': 0.263, 'stretchTwo': 7844, 'locTwo': -4.0, 'nGuessTwo': 45.0, 'fitness': 15797}
+
+  
+  
+  wm = statGAsplitWM(wm)
+  allData, allLabel = statGiveData(wm)
+  trainingData = avgLists(allData)
+  trainingLabel = allLabel[0].split(",",1)[0] + ", avg"
+  
+  for k in range(len(allData)):
+    plt.plot(range(len(allData[k])), allData[k], label=allLabel[k])
+
+  prediction = [ statGAfitness(wm, trainingData, param,x) for x in range(len(trainingData)) ]
+
+  plt.plot(range(len(trainingData)), trainingData, "co", label=trainingLabel)  
+  plt.plot(range(len(prediction)), prediction, "k^", label="prediction")  
+  plt.legend(title="With parameters")
+  
+  print("Fitness: {}".format(statGAfitness(wm, trainingData, param)))
+  plt.show()
+  
+
+
+#########################################################################
+# printing
 def paramsUOV():
   """
   Check and outputs possible parameters for UOV
@@ -1587,6 +2308,14 @@ def testAll():
   res = multiPoly2strPretty({'#':1, '2':1, '12':1, "1#2":1})
   assert "x_{1}x_{2}+x_{12}+x_{2}+1" == res, "Error multiPoly2strPretty.3 with "+res
   
+  # check average list
+  x = avgLists([ [1,2,3], 
+                 [1,2,3] ])
+  assert x == [1.0, 2.0, 3.0], "avgLists.1 with {}".format(x)
+  x = avgLists([ [1,2,3,5], 
+                 [1,2,3] ])
+  assert x == [1.0, 2.0, 3.0, 5.0], "avgLists.2 with {}".format(x)
+  
   # verify if we produce the same sequences in the univariate and the multivariate case
   outNum = 500
   D = 16
@@ -1637,11 +2366,13 @@ def testAll():
     
   print("End testing flipFields")  
 
+
 #testAll()
-#mulPolys()
-#plotGens()
-#paramsUOV()
-#printDef()
+
+ 
+      
+
+
 
 
 

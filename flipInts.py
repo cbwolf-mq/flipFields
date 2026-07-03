@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 Implementation of FlipInts
-Version 1.05
-Date 2026-06-28
+Version 1.07
+Date 2026-07-03
 
 @author: Christopher Wolf, chris/at/Christopher-Wolf.de
+
+For more information, see https://eprint.iacr.org/2026/1088
+
 
 The programme is under GNU General Public License v3, but not any later version.
 https://www.gnu.org/licenses/gpl-3.0.html
@@ -19,28 +22,13 @@ import math
 import random
 import datetime
 import functools
+import itertools
+from copy import deepcopy
+import scipy
+import matplotlib.pyplot as plt
 
 from flipFields import isField,isElem,isPoly,isPolyRelaxed,poly2num,poly2str,plotState,log2int
 from flipPolys import invMul as flipPolysInvMul
-
-
-# =============================================================================
-# # checks if D is of the form 2^(d+1)
-# def is Ring(D):
-#   if (D < 3): return False
-#   while (D > 1): 
-#     if (D % 2) == 1: return False
-#     D //= 2
-#   return True
-# 
-# # checks if a given input a is actually within the given odd ring D=2^(d+1)
-# def is Elem(a,D):
-#   if not(is Ring(D)): return False
-#   if a <= 0: return False
-#   if a >= D: return False
-#   if (a % 2) != 1: return False
-#   return True
-# =============================================================================
 
 
 def isVec(v,D):
@@ -95,7 +83,6 @@ def isLU_lower(L,D):
   return True        
   
 
-# check if a matrix is of the generalized upper matrix format
 def isLU_upper(U,D):
   """
   Check if a matrix is of the generalized upper matrix format.
@@ -103,7 +90,7 @@ def isLU_upper(U,D):
   Parameters
   ----------
   U : list of lists
-    Lower triangular matrix .
+    Upper triangular matrix .
   D : int
     Generates the corresponding FlipInts with modulus D.
 
@@ -179,8 +166,6 @@ def invHensel(a,D):
     a = a % D
     r = invRec(a, (k+1)//2)
     return (2-a*r) * r % D
-      
-   
   assert isElem(a,D), "is not an element a=%d for D=%d"%(a,D)
   k = log2int(D)
   assert 2**k == D, "k invalid for k=%d, D=%d"%(k,D)
@@ -238,13 +223,6 @@ def applyMatVecOdd(M,x,D):
   return y
 
 
-# compute y = Mx for given M, x
-# Input:
-#   M: (s x s) matrix
-#   x: (s x 1) vector
-# Output
-#   y: (s x 1) vector
-# All computations mod D and s an odd number
 def applyMatVecPlain(M,x,D):
   """
   compute y = Mx for given M, x.
@@ -261,7 +239,7 @@ def applyMatVecPlain(M,x,D):
   Parameters
   ----------
   M : list
-    Matrix in the form of list of lits of integers.
+    Matrix in the form of list of lists of integers.
   x : list
     vector.
   D : int
@@ -291,16 +269,27 @@ def applyMatVecPlain(M,x,D):
   return y
 
 
-# compute y = Mx for given M, y
-# https://en.wikipedia.org/wiki/Iterative_method - iterative method
-# https://en.wikipedia.org/wiki/Gauss%E2%80%93Seidel_method - GaussSeidel method
-# Input:
-#   M: (s x s) matrix
-#   y: (s x 1) vector
-# Output
-#   x: (s x 1) vector
-# All computations mod D and s an odd number
+
 def solveMatVec(M,y,D):
+  """
+  Compute y = Mx for given matrix and a vector y.
+  
+  Parameters
+  ----------
+  M : list
+    (s x s)-matrix a s a list of list. Will be destroyed in the solving process.
+  y : list
+    (s x 1)-vector as a list of integers.
+  D : int
+    Corresponding FlipInt.
+
+  Returns
+  -------
+  If exists, solution to Mx=y. 
+  This is a (s x 1)-vector.
+  """
+  # https://en.wikipedia.org/wiki/Iterative_method - iterative method
+  # https://en.wikipedia.org/wiki/Gauss%E2%80%93Seidel_method - GaussSeidel method
   s = len(y)
   assert (s % 2) == 1, "s not odd: "+str(s)
   assert s == len(M), "mat has wrong size: "+str(len(M))
@@ -364,7 +353,6 @@ def solveMatVec(M,y,D):
       accu += M[fromRow][curCol]*x[curCol] % D
     assert M[fromRow][fromRow] == 1, "non-one element at "+fromRow+" with "+M[fromRow][fromRow]
     x[fromRow] = (y[fromRow] - accu) % D
-#    assert isElem(x[fromRow],D), "non-element x="+str(x[fromRow])
   return x
 
 
@@ -539,17 +527,42 @@ def mulPolyFindBCoeffs(A,deg,D):
 #############################################################
 # rndElems
 
-# returns a random vector of length s mod D
 def rndVecOdd(s,D): 
+  """
+  Returns a random vector of length s mod D
+
+  Parameters
+  ----------
+  s : int
+    Dimension of the vector.
+  
+  Returns
+  -------
+  list
+    Vector of dimension s.
+  """
   assert (s % 2) == 1, "even s with "+str(s)  
-  fromList = range(1,D,2)
   resVec = s*[1]
   for i in range(len(resVec)):
-    resVec[i] = random.choice(fromList)  
+    resVec[i] = random.randrange(1,D,2)
   return resVec 
 
-# returns a random matrix of size (s x s) mod D
 def rndMatOdd(s,D):
+  """
+  Returns a random matrix of size (s x s) mod D.
+
+  Parameters
+  ----------
+  s : int
+    Dimension of the matrix.
+  D : int
+    Generates the corresponding FlipInts.
+
+  Returns
+  -------
+  list
+    Matrix as list of list of dimension s.
+  """
   assert (s % 2) == 1, "even s with "+str(s)  
   M = [1]*s
   for i in range(s):
@@ -586,18 +599,28 @@ def rndLU_upper(s,D):
   assert isLU_upper(U,D)      
   return U
 
-# generate random matrices and try to solve 
-# Mx = y 
-# for given M,y. Report algorithm failures.
-# Write the result to a res-file
-# used to dermine if solveMatVec can be used to solve matrix/vector equations over odd rings
+
 def rndMatTest():  
+  """
+  Generate random matrices and try to solve 
+  Mx = y 
+  for given M,y. Report algorithm failures.
+  Write the result to a res-file
+  Uused to dermine if solveMatVec can be used to solve matrix/vector equations over odd rings
+  Returns
+  -------
+  None
+  """
   fileOut = 0
   totalCnt = 0 # total number of repetitions
-  menuS = [3,5,7,9,11,13,17,25,37, 41, 43,45,47,57,69,81,93,101,113 ]
-  menuD = [16, 128, 256, 512, 65536]
+  #menuS = [3,5,7,9,11,13,17,25,37, 41, 43,45,47,57,69,81,93,101,113 ]
+  #menuD = [16, 128, 256, 512, 65536]
   #menuS = [3,5,7 ]
   #menuD = [16, 128]
+  menuS = [ 3, 5 ]
+  menu_d = [ 2**i for i in range(2,11) ] + [ (2**i)-1 for i in range(2,11) ] + \
+           [ (2**i)+(2**(i-1)) for i in range(2,11) ]  + [128+256 , 256+512]+ [1,2,3] + [2047,2048]          
+  menuD = list(set([ 2**(d+1) for d in menu_d ]))
 
   targetVars = ["AnumRep", "Bsucc", "CfailAlg","DfailErg"]
   # generate tags
@@ -605,7 +628,7 @@ def rndMatTest():
   dictVars = {}
   for s in menuS:
     for D in menuD:
-      tag = "s%3d_D%5d_"%(s,D)
+      tag = "s%3d_D%1000d_"%(s,D)
       dictCases[tag] = [s,D]
       allTags = list(tag+x for x in targetVars)
       for v in allTags: dictVars[v] = 0
@@ -621,7 +644,7 @@ def rndMatTest():
       s = dictCases[curCase][0]  
       D = dictCases[curCase][1]
     
-      repCnt = random.randint(63, 127)
+      repCnt = random.randint(511, 1003)
       totalCnt += repCnt
   
       # apply the full menu for testing
@@ -649,7 +672,8 @@ def rndMatTest():
     with open(fileName, "w") as f:
       # write the whole content of dictCases
       f.write("Date/Time"+now.strftime("%Y-%m-%d %H:%M:%S"))
-      f.write("\ntotal number of repetitions: %d\n\n"%totalCnt)
+      f.write("\nMenu_d\n"+str(menu_d))
+      f.write("total number of repetitions: %d\n\n"%totalCnt)
       sOld = -1
       for curCase in sorted(dictCases.keys()):
         s = dictCases[curCase][0]  
@@ -658,7 +682,7 @@ def rndMatTest():
         else: f.write("\\\\\n     & ")
         sOld = s
       
-        f.write("   %d  "%D)
+        f.write("   %d  "%(math.log(D,2)-1))
         # #rep
         rep = dictVars[curCase+"AnumRep"]  
         succ = dictVars[curCase+"Bsucc"]; propSucc = succ / rep
@@ -670,7 +694,6 @@ def rndMatTest():
         f.write("& %d & %7.5f "%(failAlg, propAlg))
         f.write("& %d & %7.5f "%(failErg, propErg))
       
-      
       # write the whole dictionary
       f.write("\n\n\n")
       f.write(str(dictCases))
@@ -679,14 +702,20 @@ def rndMatTest():
       f.write("\nEnde\n")
       
       f.close()
-    # end infinity loop    
+    # end infinity loop      
     
-# generate random LU-decompositions and try to solve 
-# LUx = b 
-# for given L,U,b. Report algorithm failures.
-# Write the result to a res-file
-# used to dermine if solveMatVec can be used to solve matrix/vector equations over odd rings
 def rndTestLU():  
+  """
+  generate random LU-decompositions and try to solve 
+  LUx = b 
+  for given L,U,b. Report algorithm failures.
+  Write the result to a res-file
+  used to dermine if solveMatVec can be used to solve matrix/vector equations over odd rings
+
+  Returns
+  -------
+  None
+  """
   fileOut = 0
   totalCnt = 0 # total number of repetitions
   menuS = [3,5,7,9,11,13,17,25,37, 41, 43,45,47,57,69,81,93,101,113 ]
@@ -1777,11 +1806,13 @@ def testAll():
   outTup = str(symRewriteEqsLin("a", 3, "s", 2, sSet, 512))
   assert outTup == "(['57*a2*', '3*a2*'], {'a1': '341*a2*', 'a0': '57*a2*'})", "symRewriteEqsLin.4"
   
-  #symSolveAxb([[1]],[3],16)
-  
-  #symSolveAxb([[1,3,5],[1,1,1],[3,3,3]],[9,3,9],16)
-  
-  #symSolveAxb([[1,3,5],[1,1,1],[3,3,3]],[1,3,5],16)
+  # [3]
+  # symSolveAxb([[1]],[3],16)
+  # []
+  # symSolveAxb([[1,3,5],[1,7,3],[3,3,3]],[9,3,9],16)
+  # [5, 1, 13]
+  # symSolveAxb([[1,3,5],[1,7,3],[3,7,7]],[9,3,9],16)
+  # [9, 13, 5]
   
   # done
   print("Done Testing")
@@ -1789,6 +1820,25 @@ def testAll():
 
 
 def symSolveAxb(A,b,D):
+  """
+  For given A,b, solve the equation Ax=b.
+
+  Parameters
+  ----------
+  A : list of lists
+    Matrix.
+  b : list
+    Vector.
+  D : int
+    Generating number for the corresponding FlipInts.
+
+  Returns
+  -------
+  eqs : TYPE
+    DESCRIPTION.
+  repDict : TYPE
+    DESCRIPTION.
+  """
   n = len(b)
   assert n >= 1, "Too small n with "+str(n)
   assert (n % 2) == 1, "Even n with "+str(n)
@@ -1814,51 +1864,361 @@ def symSolveAxb(A,b,D):
     # check if some polynomial has only one variable - this means the variable is zero
     # check if we have closed equations
     while len(eqs) != 0:
+      # divide each line by the gcd of this line
+      for i in range(len(eqs)):
+        fullGCD = functools.reduce(math.gcd, [ int(e.split("*",1)[0]) for e in eqs[i].split("+") ])
+        if fullGCD == 1: continue
+        # divide the whole line by this gcd
+        termList = []
+        for t in eqs[i].split("+"):
+          f,r = t.split("*",1)
+          f = int(f)
+          assert (f % fullGCD) == 0, "Not divisible by gcd with num={}, gcd={}".format(f,fullGCD)
+          f //= fullGCD
+          termList.append(str("*".join([str(f),r])))
+        eqs[i] = "+".join(termList)  
+        
       # find a closed equation with minimal number of terms  
+      # one factor for a variable must be odd
       i = -1; foundEq = -1; foundTerms = 10**100; foundLen = 10**100
       while True:
         i += 1    
         if i >= len(eqs): break
-        if symPolyIsOdd(eqs[i],D): continue # active equation
-        print("even with {}".format(eqs[i]))
         
-        eqLen = len(eqs[i])
-        terms = eqs[i].count("+")
-        if (terms < foundTerms) or ((terms == foundTerms) and (eqLen < foundLen)): 
-          foundTerms = terms; foundEq = i; foundLen = eqLen  
-          print("found {} and {}".format(foundEq,foundLen))
-      print("might found some {}".format(foundEq))  
+        # check if we have an odd variable in the equation
+        for t in eqs[i].split("+"):
+          # make sure we have a variable
+          if t.count("*") != 2: continue
+          f,v,r = t.split("*")
+          if (int(f) % 2) == 0: continue
+          tmpTerm = t
+          # check if this equation is shorter
+          eqLen = len(eqs[i])
+          terms = eqs[i].count("+")
+          # !!! make sure we have an odd variable term, only return those
+          if (terms < foundTerms) or ((terms == foundTerms) and (eqLen < foundLen)): 
+            foundEq = i; foundTerm = tmpTerm; foundTerms = terms; foundLen = eqLen  
+            print("found v={}, #={} and len={}".format(foundTerm,foundEq,foundLen))
       if foundEq == -1: break  # no closed equation      
-      print("found some {}".format(foundEq))
+      print("found eq num {} with eq: {}".format(foundEq,eqs[foundEq]))
       # remove one variable, make sure leading term is 1
       if eqs[foundEq].count("+") >= 1: t,r = eqs[foundEq].split("+",1)
       else: t = eqs[foundEq]; r = ""
       
-      f,v = t.split("*",1)
-      assert f.isdigit(), "Wrong number with "+f
+      print("all eqs")
+      for i in range(len(eqs)):
+        print("{}: {}".format(i,eqs[i]))
       
+      # remove term from the current equation
+      workingEq = symSubtractTerm(eqs[foundEq], foundTerm, D)
+      f,v,r = foundTerm.split("*")
+      assert f.isdigit(), "Wrong number with "+f
       f = int(f); 
-      if (f % 2) == 1:
-        f = (D -f) % D; f = invMul(f, D)
-      #else:
-      #  # we have an even factor here---split into two odd factors
-      #  r += ("" if r=="" else "+") + (str((f-1) % D))+"*"+v
-      #  f = 1
-      repVar = v.replace("*","")
-      print("f: "+str(f))
-      if r != "": r = symMultFacPoly(f, r, allVars, D)
-      repDict[repVar] = r
+      assert (f % 2) == 1, "Wrong factor for "+str(f)
+      assert r == "", "Wrong rest for "+r            
+      f = (D -f) % D; f = invMul(f, D)
+      if workingEq != "": workingEq = symMultFacPoly(f, workingEq, allVars, D)
+      print("newWE "+workingEq)
+      repDict[v] = workingEq
       # remove var/Eqs
       del eqs[foundEq]
       # set the variable accordingly
-      print("rep "+str({repVar: repDict[repVar]}))
-      eqs = symSetEqsPoly(eqs,allVars,{repVar: repDict[repVar]},D)
+      print("rep "+str({v: repDict[v]}))
+      eqs = symSetEqsPoly(eqs,allVars,{v: repDict[v]},D)
               
-      done = False
+      done = False   
+      
     print("outRep "+str(repDict))  
-    return eqs,repDict
+    print("rest {}".format(eqs))
     
-         
-testAll()
+    # backtrack the system of solutions
+    assert len(eqs) == 0, "Did not solve the system of equations with "+str(eqs)
+    varDict = {}
+    while len(repDict) > 0:
+      repVar = ""
+      for v in repDict:
+        if (repDict[v].count("*") == 1): 
+          repVar = v; 
+          repVal,dummy = repDict[repVar].split("*",1)
+          repVal = int(repVal)
+      assert repVar != "", "No repeatable variable."
+      for v in repDict:
+        if v == repVar: continue
+        repDict[v] = symAddUp(symSetEqs([repDict[v]], allVars, {repVar: repVal}, D)[0],D)
+        print("After replace "+str(repDict))
+      varDict[repVar] = int(repDict[repVar].split("*")[0])
+      del repDict[repVar]
+    
+    outVec = []
+    for i in range(n):
+      outVec.append(varDict["x"+str(i)])
+      
+    print("  final result: "+str(outVec))
+    
+    
+    return outVec
+ 
+
+def printNumSolMat():
+  """
+  Computes how many solutions the equation Ax=b for given A,b has.
+  Uses brute force on x.
+  Outputs this both to the screen as to a file.
+
+  Returns
+  -------
+  None
+  """
+  #menuD = [ 4,8,16,32 ]
+  #menuN = [ 3,5 ]
+  #repNum = 10000
+  menuD = [ 8 ]
+  menuN = [ 3 ]
+  repNum = 100
+  
+  prefix = "_matInv"; prefixFull = "_matInvFull"
+  saveState = {}; saveStateFull = {}
+  outStr = ""; fullOut = ""
+  plotState(prefix,saveState,outStr)  
+  
+  for n in menuN:  
+    for D in menuD:
+      allNumSol = { i:0 for i in range((D//2)**n+1) }
+      # generate random equations
+      for repCnt in range(repNum):
+        # generate a random equation
+        A = rndMatOdd(n, D)
+        b = rndVecOdd(n, D)   
+        numSol = 0
+        for tstX in range((D//2)**n):
+          x = []
+          for i in range(n):
+            x.append(2*(tstX % (D//2))+1)
+            tstX //= (D//2)
+          # test our equation
+          outB = applyMatVecOdd(A,x,D)
+          if outB == b: 
+            numSol += 1
+        # check how many solutions we have
+        allNumSol[numSol] += 1
+        
+        if (repCnt % 512) == 0:      
+          outStr = "\nRun n={} D={} with rep={}\n\n".format(n,D,repCnt)
+          # output the number of solutions
+          numOut = 0
+          for k in range((D//2)**n+1): 
+            if allNumSol[k] == 0: continue
+            outStr += "{} & {} ".format(k,allNumSol[k])
+            outStr += "\\\\\n" if (numOut % 5) == 4 else "&   "
+            numOut += 1
+          if outStr != "": outStr += "\\\\\n"
+          plotState(prefix,saveState,outStr)  
+      # end for repCnt    
+      
+      outStr = "\nRun n={} D={} with rep={}\n\n".format(n,D,repCnt)
+      # output the number of solutions
+      numOut = 0
+      for k in range((D//2)**n+1): 
+        if allNumSol[k] == 0: continue
+        outStr += "{} & {} ".format(k,allNumSol[k])
+        outStr += "\\\\\n" if (numOut % 5) == 4 else "&   "
+        numOut += 1
+      if outStr != "": outStr += "\\\\\n"
+      
+      fullOut += outStr
+      plotState(prefix,saveState,outStr)    
+      plotState(prefixFull,saveStateFull,fullOut)
+
+
+def isMatSolvable(A,numTries,D):
+  """
+  Checks if a matrix A is numTries-computationally solvable.
+
+  Parameters
+  ----------
+  A : list
+    Matrix as a list of list over flipInts.
+  numTries : int
+    Number of repetitions.
+  D : int
+    Number generating the corresponding FlipInt.
+
+  Returns
+  -------
+  bool
+    True iff the matrix A is numTries-computationally solvable.
+  """
+  s = len(A)
+  assert (s % 2) == 1, "s is not odd with {}".format(s)
+  for i in range(s):
+    assert isVec(A[i],D), "No Odd Vector at {} for {}".format(i,A[i])
+  for t in range(numTries):
+    b = rndVecOdd(s,D); 
+    # check if invertible
+    try:
+      y = solveMatVec(A,b,D)    
+      # check if y is a valid solution
+      for i in range(s):
+        if not(isElem(y[i],D)): return False
+      # check if the solution solves the original equation
+      x = applyMatVecPlain(A,y,D)
+      if x != b: return False
+    except AssertionError: return False
+  # end for t
+  return True
+
+
+def printNumMatSolveable():
+  """
+  Verifies how many trials we can do with the definition of k-computally solvable matrix
+  on random matrices
+
+  Returns
+  -------
+  None
+  """
+  
+  def printAll(final=False):
+    nonlocal outStr
+    nonlocal funOut
+    
+    # output the number of solutions
+    curLine = ""
+    numOut = 0
+    for k in sorted(allNumSol): 
+      curLine += "{} & {} ".format(k,allNumSol[k])
+      curLine += "\\\\\n" if (numOut % 10) == 9 else "&   "
+      numOut += 1
+    if final: 
+      funOut += "\n%Run n={} D={} with rep={}\n".format(n,D,repCnt)
+      funOut += curLine + "\n"
+    outStr += "\nRun n={} D={} with rep={}\n".format(n,D,repCnt)
+    if final: outStr += "\n\nFINAL START\n"
+    outStr += funOut + "\n"
+    if final: outStr += "FINAL END\n\n"
+    if final: print("\nRun n={} D={} with rep={}".format(n,D,repCnt))
+    plotState(prefix,saveState,outStr)  
+  
+  #repNum = 10000
+  menuD = [ 8,16,256,2048 ]
+  # menuN = [ 3,5,11,45,65,73,97,1001  ]
+  menuN = [ 7,9  ]
+  repNum = 100000
+  
+  prefix = "solveMat"; 
+  saveState = {}; 
+  outStr = ""; 
+  funOut = ""
+  plotState(prefix,saveState,outStr)  
+  
+  for n in menuN:  
+    for D in menuD:
+      allNumSol = { }
+      # generate random equations
+      for repCnt in range(repNum):
+        # generate a random equation
+        A = rndMatOdd(n, D)
+        solCnt = 0
+        aCopy = deepcopy(A)
+        while solCnt < 100:
+          if not isMatSolvable(A, 1, D): break
+          A = deepcopy(aCopy)
+          solCnt += 1
+        if solCnt in allNumSol: allNumSol[solCnt] += 1
+        else: allNumSol[solCnt] = 1
+        
+        if (repCnt % 512) == 0: printAll()
+      # end D
+      printAll(final=True)
+  # end for n
+  printAll(final=True)    
+  
+  
+def printNumVecResponsive():
+    """
+    Verifies how many trials we can do with the definition of r-responsiveness for a given matrix A
+
+    Returns
+    -------
+    None
+    """
+    
+    def printAll(final=False):
+      nonlocal outStr, funOut, statOut
+      
+      # output the number of solutions
+      curLine = "{} & {} & {} ".format(n,d,allNumNoSol)
+      numOut = 0
+      for k in sorted(rResponse): 
+        curLine += "& {} & {}".format(k,rResponse[k])
+        curLine += "\\\\\n  & & " if (numOut % 8) == 7 else "  "
+        numOut += 1
+      if (numOut % 8) != 0: curLine += "\\\\\n"   
+      if final: 
+        funOut += "\n%Run n={} d={} with rep={}\n".format(n,d,repCnt)
+        funOut += curLine + "\n\\hline"
+      outStr += "\nRun n={} d={} with rep={}\n".format(n,d,repCnt)
+      outStr += "{}\n".format(curLine)
+      
+      # output statistical data
+      if final: 
+        statList = []
+        for k in range(max(rResponse)+1): 
+          statList.append(0 if not k in rResponse else rResponse[k])
+        # output and give statistical evaluation
+        statOut += "\n%Stat n={} d={} with rep={} and sum={}\n".format(n,d,repCnt,sum(statList))
+        statOut += str(statList) + "\n"
+      
+      if final: outStr += "\n\nFINAL START\n"
+      outStr += funOut + "\n"
+      outStr += statOut + "\n"
+      if final: outStr += "FINAL END\n\n"
+      if final: print("\nRun n={} d={} with rep={}".format(n,d,repCnt))
+      plotState(prefix,saveState,outStr)  
+    # end def printAll
+    ##################
+    
+    #repNum = 10000
+    menu_d = [ 2, 3, 7, 10, 128, 256, 384, 512 ]
+    #menu_d = [ 2, 3, 7, 10, 256, 512 ]
+    menuN = [ 3,5,7,11,15,31 ]
+    repNum = 100000
+    
+    prefix = "solveMat"; 
+    saveState = {}; 
+    outStr = ""; funOut = ""; statOut = ""
+    plotState(prefix,saveState,outStr)  
+    
+    for n in menuN:  
+      for d in menu_d:
+        D = 2**(d+1)
+        allNumNoSol = 0
+        rResponse = { }
+        # generate random equations
+        for repCnt in range(repNum):
+          # generate a random equation
+          A = rndMatOdd(n, D)
+          aCopy = deepcopy(A)
+          if not isMatSolvable(A, 1, D): allNumNoSol += 1; continue
+          A = deepcopy(aCopy)
+          # find r-responsiveness
+          rResCnt = 0
+          for loopCnt in range(100):
+            A = deepcopy(aCopy)
+            if isMatSolvable(A, 1, D): rResCnt += 1
+          if not rResCnt in rResponse: rResponse[rResCnt] = 0
+          rResponse[rResCnt] += 1
+            
+          if (repCnt % 512) == 0: printAll()
+        # end D
+        printAll(final=True)
+    # end for n
+    printAll(final=True)   
+
+#printNumSolMat()
+#testAll()
 #printSym()
+#rndMatTest()
+#printNumMatSolveable()
+printNumVecResponsive()
 
