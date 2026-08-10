@@ -29,7 +29,7 @@ import random
 import numpy 
 import scipy
 from dataclasses import dataclass
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 #import flipPolys
 
@@ -2161,17 +2161,17 @@ def statPaint():
   trainingData = avgLists(allData)
   trainingLabel = allLabel[0].split(",",1)[0] + ", avg"
   
-  for k in range(len(allData)):
-    plt.plot(range(len(allData[k])), allData[k], label=allLabel[k])
+  # for k in range(len(allData)):
+  #   plt.plot(range(len(allData[k])), allData[k], label=allLabel[k])
 
-  prediction = [ statGAfitness(wm, trainingData, param,x) for x in range(len(trainingData)) ]
+  # prediction = [ statGAfitness(wm, trainingData, param,x) for x in range(len(trainingData)) ]
 
-  plt.plot(range(len(trainingData)), trainingData, "co", label=trainingLabel)  
-  plt.plot(range(len(prediction)), prediction, "k^", label="prediction")  
-  plt.legend(title="With parameters")
+  # plt.plot(range(len(trainingData)), trainingData, "co", label=trainingLabel)  
+  # plt.plot(range(len(prediction)), prediction, "k^", label="prediction")  
+  # plt.legend(title="With parameters")
   
-  print("Fitness: {}".format(statGAfitness(wm, trainingData, param)))
-  plt.show()
+  # print("Fitness: {}".format(statGAfitness(wm, trainingData, param)))
+  # plt.show()
   
 
 

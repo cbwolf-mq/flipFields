@@ -23,9 +23,9 @@ import random
 import datetime
 import functools
 import itertools
-from copy import deepcopy
+from copy import deepcopy, copy
 import scipy
-import matplotlib.pyplot as plt
+from dataclasses import dataclass
 
 from flipFields import isField,isElem,isPoly,isPolyRelaxed,poly2num,poly2str,plotState,log2int
 from flipPolys import invMul as flipPolysInvMul
@@ -75,7 +75,7 @@ def isLU_lower(L,D):
       assert L[0][0] == 1, "L[i,j] is not 1 L[i,j]="+str(L[0][0])+" i=0, j=0"
     else: 
       for i in range(layer*2-1, layer*2):
-        for j in range(layer*2 + 1) :
+        for j in range(layer*2 + 1):
           assert isElem(L[i][j],D), "L[i,j] is not an element for L[i,j]="+str(L[i][j])+" i="+str(i)+ " j="+str(j)
           if j == layer*2: assert L[i][j] == 1, "L[i,j] is not 1 but L[i,j]="+str(L[i][j])+" i="+str(i)+ " j="+str(j)
         for j in range(layer*2+1,s):
@@ -108,6 +108,44 @@ def isLU_upper(U,D):
       for j in range(0,layer*2-1):
         assert U[i][j] == 0, "U[i,j] is none-zero for U[i,j]="+str(U[i][j])+" i="+str(i)+ " j="+str(j)
   assert isElem(U[s-1][s-1],D), "U[i,j] is not an element for U[i,j]="+str(U[i][j])+" i="+str(i)+ " j="+str(j)
+  return True
+
+
+def isMatSolvable(A,numTries,D):
+  """
+  Checks if a matrix A is numTries-computationally solvable.
+
+  Parameters
+  ----------
+  A : list
+    Matrix as a list of list over flipInts.
+  numTries : int
+    Number of repetitions.
+  D : int
+    Number generating the corresponding FlipInt.
+
+  Returns
+  -------
+  bool
+    True iff the matrix A is numTries-computationally solvable.
+  """
+  s = len(A)
+  assert (s % 2) == 1, "s is not odd with {}".format(s)
+  for i in range(s):
+    assert isVec(A[i],D), "No Odd Vector at {} for {}".format(i,A[i])
+  for t in range(numTries):
+    b = rndVecOdd(s,D); 
+    # check if invertible
+    try:
+      y = solveMatVec(A,b,D)    
+      # check if y is a valid solution
+      for i in range(s):
+        if not(isElem(y[i],D)): return False
+      # check if the solution solves the original equation
+      x = applyMatVecPlain(A,y,D)
+      if x != b: return False
+    except AssertionError: return False
+  # end for t
   return True
 
 
@@ -166,6 +204,8 @@ def invHensel(a,D):
     a = a % D
     r = invRec(a, (k+1)//2)
     return (2-a*r) * r % D
+  
+  
   assert isElem(a,D), "is not an element a=%d for D=%d"%(a,D)
   k = log2int(D)
   assert 2**k == D, "k invalid for k=%d, D=%d"%(k,D)
@@ -269,7 +309,6 @@ def applyMatVecPlain(M,x,D):
   return y
 
 
-
 def solveMatVec(M,y,D):
   """
   Compute y = Mx for given matrix and a vector y.
@@ -356,14 +395,49 @@ def solveMatVec(M,y,D):
   return x
 
 
-# compute Ly = b for given L, b
-# solve Ly = b 
-# L is a generalized lower matrix over the integer carrier
-# D is 2^(d+1) for the dimension d of the integer carrier
 def solveLU_lower(L,b,D):
-  
-  # solve Ly = b for some intermediate solution y
+  """
+  compute Ly = b for given matrix L and vector b and unknown vector y.
+
+  Parameters
+  ----------
+  L : list
+    L is a generalized lower matrix over the integer carrier.
+  b : list
+    vector over the integer carrier.
+  D : int
+    D is 2^(d+1) for the dimension d of the integer carrier.
+
+  Returns
+  -------
+  list
+    Output vector y for Ly=b.
+  """
+
   def solveRec_lower(L,b,s,layer,y,D):
+    """
+    solve Ly = b for some intermediate solution y.
+
+    Parameters
+    ----------
+   L : list
+    L is a generalized lower matrix over the integer carrier.
+    b : list
+    vector over the integer carrier.
+    s : int
+      Dimension of the matrix and vectors.
+    layer : int
+      Current layer for the solving process.
+    y : list
+      Intermediate solution so far, will be ammended.
+    D : int
+      D is 2^(d+1) for the dimension d of the integer carrier.
+
+    Returns
+    -------
+    list
+      Vector y that solves Ly=b.
+    """
     assert isLU_lower(L,D), "L is not generalized lower matrix for L="%str(L)
     assert layer*2 < s, "layer is too high for s for (layer,s)=("+str(layer)+","+str(s)+")"
     rL = layer*2+1  # starts with layer 0
@@ -403,14 +477,50 @@ def solveLU_lower(L,b,D):
   # recursively solve for all layers
   return solveRec_lower(L,b,s,0,y,D)
 
-# compute Ux = y for given U,y
-# solve Ux = y 
-# U is a generalized upper matrix over the integer carrier
-# D is 2^(d+1) for the dimension d of the integer carrier
+
 def solveLU_upper(U,y,D):
-  
-  # solve Ux = y for some intermediate solution x
+  """
+  Computes Ux = y for given matrix U and vector y and unknown vector x
+  Solves Ux = y 
+
+  Parameters
+  ----------
+  U : list
+    U is a generalized upper matrix over the integer carrier.
+  y : list
+    Vector.
+  D : int
+    D is 2^(d+1) for the dimension d of the integer carrier.
+
+  Returns
+  -------
+  list
+    Vector x for the equation Ux = y
+  """
   def solveRec_upper(U,y,s,layer,x,D):
+    """
+    solve Ux = y for some intermediate solution x
+
+    Parameters
+    ----------
+    U : list
+      Generatlized upper triangular matrix.
+    y : list
+      Vector.
+    s : int
+      Dimension of the matrix and vectors.
+    layer : int
+      Current layer for the solution.
+    x : list
+      Current solution as a vector.
+    D : int
+      D is 2^(d+1) for the dimension d of the integer carrier.
+
+    Returns
+    -------
+    list
+      Vector x that solves Ux = y for given U,y.
+    """
     if layer < 0: return [x.copy()] # we have a solution, we are done
     assert isLU_upper(U,D), "U is not generalized upper matrix for U="%str(U)
     assert layer*2 < s, "layer is too high for s for (layer,s)=("+str(layer)+","+str(s)+")"
@@ -481,9 +591,24 @@ def solveLU(L,U,b,D):
   
 #############################################################
 # Polynomials
-
-# returns A(X). B(X)for two polynomials
 def mulPoly(A,B,D):
+  """
+  Computes A(t).B(t) for A(t), B(t) encoded as integers.
+
+  Parameters
+  ----------
+  A : int
+    Polynomial encoded as an integer.
+  B : int
+    Polynomila encoded as an integer.
+  D : int
+    Integer generating the corresponding FlipInts.
+
+  Returns
+  -------
+  int
+    Returns A(t).B(t) for A(t), B(t) encoded as integers.
+  """
   assert isPoly(A,D), "A not valid with "+str(A)
   assert isPoly(B,D), "B not valid with "+str(B)
   R = {}  # prepare the result
@@ -569,8 +694,23 @@ def rndMatOdd(s,D):
     M[i] = rndVecOdd(s,D)   
   return M  
 
-# generate a lower triangular matrix 
+
 def rndLU_lower(s,D):
+  """
+  Generates a generatlized lower triantular matrix.
+
+  Parameters
+  ----------
+  s : int
+    Dimension of the matrix.
+  D : int
+    Module generating the FlipInts.
+
+  Returns
+  -------
+  list
+    Matrix as list of lists.
+  """
   # generate a random lower matrix and modify it layer by layer
   L = rndMatOdd(s,D)
   # set first row
@@ -588,8 +728,23 @@ def rndLU_lower(s,D):
   assert isLU_lower(L,D)     
   return L
 
-# generate an upper triangular matrix 
+
 def rndLU_upper(s,D):
+  """
+  Generates a generatlized uppertriantular matrix.
+
+  Parameters
+  ----------
+  s : int
+    Dimension of the matrix.
+  D : int
+    Module generating the FlipInts.
+
+  Returns
+  -------
+  list
+    Matrix as list of lists.
+  """
   # generate a random upper matrix and modify it layer by layer
   U = rndMatOdd(s,D)
   for layer in range((s // 2)):
@@ -847,6 +1002,7 @@ def checkNearOdd():
 
 #############################################################
 # symbolic computation
+
 def symIsPoly(p,v,D,relaxed=True):
   """
   Checks if a polynomial string is well-formed, i.e.
@@ -859,18 +1015,21 @@ def symIsPoly(p,v,D,relaxed=True):
   p : str
     Polynomial.
   v : set of str
-    variables.
+    variables. If v is the empty set, skip the variable test.
   D : int
     Modulus of the flipField.
   relaxed : bool
-    Skip check if all factors are elements of the flipInts  
+    Skip check if all factors are elements of the flipInts, i.e. if relaxed=True, also even numbers are allowed as factors.  
 
   Returns
   -------
   bool
-    True iff p is well-formed regarding v, D
+    True iff p is well-formed regarding v, D and relaxed
   """
   assert isField(D), "no field for D=%d"%D
+  
+  # empty string is not allowed
+  if p == "": return False
   
   # check if the input is valid
   if p[-1] != "*": return False
@@ -883,7 +1042,7 @@ def symIsPoly(p,v,D,relaxed=True):
     if not(facs[0].isdigit()): return False
     if not(relaxed) and not(isElem(int(facs[0]),D)): return False
     for f in facs[1:-1]:
-      if not(f in v): return False
+      if not(f in v) and len(v) > 0: return False
   return True 
 
 
@@ -942,6 +1101,79 @@ def symIsLinear(p,v,D):
   return functools.reduce(lambda a,b: a and b, [ s.count("*") == 2 for s in p.split("+") ] )
 
 
+def symIsAffine(p,v,D):
+  """
+  Verifies if p is a valid polynomial and also of degree 1 or 0.
+
+  Parameters
+  ----------
+  p : str
+    Polynomial.
+  v : set of str
+    variables.
+  D : int
+    Modulus of the flipField.
+
+  Returns
+  -------
+  bool
+    True iff the input polynomial is affine.
+  """
+  assert symIsPoly(p,v,D), "Not a polynomial with "+p
+  if symIsLinear(p,v,D): return True
+  return functools.reduce(lambda a,b: a and b, [ s.count("*") == 1 for s in p.split("+") ] )
+
+
+def symIsPolyInt(p,D):
+  """
+  Checks if the input is actually a number, e.g. '0*' or '5*'
+
+  Parameters
+  ----------
+  p : str
+    Symbolic polynomial.
+  D : int
+    Modul that generates the corresponding FlipInts.
+
+  Returns
+  -------
+  bool
+    True iff p is a number, not a proper polynomial.
+  """
+  assert isField(D), "Wrong D with {}".format(D)
+  assert symIsPoly(p,set(),D), "Not a poly with {}".format(p)
+  # how many terms?
+  if p == "": return True
+  if p.count("+") > 0: return False
+  if p.count("*") != 1: return False
+  f = p.split("*")
+  if not(f[0].isdigit()): return False
+  return True
+
+
+def symPoly2int(p,D):
+  """
+  For polynomials of the form 'a*' and 'a' a natural number, return int('a').
+
+  Parameters
+  ----------
+  p : str
+    polynomial.
+  D : int
+    Integer generating the current FlipInts.
+
+  Returns
+  -------
+  int
+    Natural number.
+  """
+  assert isField(D), "Wrong D with {}".format(D)
+  assert symIsPolyInt(p,D), "Non-polynomial with {}".format(p)
+  if p == "": return 0
+  f = p.split("*")
+  return int(f[0])
+
+
 def symAllVars(inEq,D):
   """
   Returns all variables for a given equation.
@@ -961,7 +1193,7 @@ def symAllVars(inEq,D):
   for t in inEq.split("+"):
     for f in t.split("*"):
       if (len(f) > 0) and not(f.isdigit()): outSet.add(f)
-  assert symIsPoly(inEq,outSet,D), "Wrong equation for "+inEq
+  assert symIsPoly(inEq,outSet,D), "Wrong equation for >>>"+inEq+"<<<"
   return outSet    
 
 
@@ -1015,10 +1247,12 @@ def symSetEqs(eqs,v,var2val,D):
       outStr = str(fac) + "*"
       outStr += monConst[1]
       outList.append(outStr)
-    eqs[i] = "+".join(outList) 
+    eqs[i] = symAddUp("+".join(outList),D)
   # check the output
-  for eq in eqs:
-    assert symIsPoly(eq,v,D), "Problem Eq 2: " + eq   
+  for i in range(len(eqs)):
+    eq = eqs[i]
+    if eq == "": eqs[i] = "0*"; continue
+    assert symIsPoly(eq,v,D), "Problem Eq 2: >{}< at {}".format(eq,i)
   return eqs    
 
 
@@ -1050,7 +1284,7 @@ def symSetEqsPoly(eqs,v,var2poly,D):
   curKey = list(var2poly.keys())[0]
   curVar = var2poly[curKey]
   
-  assert (var2poly[curKey] == "") or (symIsPoly(var2poly[curKey],v,D)), "Non polynomial value for "+str(var2poly)+" and !%s!"%(curVar)
+  assert (var2poly[curKey] == "") or (symIsPoly(var2poly[curKey],v,D)), "Non polynomial value for "+str(var2poly)+" and !%s!"%(curVar)+" and v="+str(v)
   targetVar = "*" + str(curKey) + "*"  
   newTerms = var2poly[curKey].split("+")
   if var2poly[curKey] == "": newTerms = ["0*"]
@@ -1087,7 +1321,7 @@ def symSortTerms(inEq,v,D):
   inEq : str
     Input polynomial.
   v : set
-    Set of all variables in the input polynomial.
+    Set of all variables in the input polynomial, may be set([]).
   D : int
     Number generating the corresponding flipInts.
 
@@ -1149,7 +1383,7 @@ def symPolyMult(leftPrefix, leftCnt, rightPrefix, rightCnt, D):
   return outList
 
 
-def symMulPolyPoly(left, right, D):
+def symMultPolyPoly(left, right, D):
   """
   Symbolic multiplication of two polynomials.
 
@@ -1169,8 +1403,8 @@ def symMulPolyPoly(left, right, D):
   """
   assert isField(D), "Invalid flipInts with "+str(D)
   v = symAllVars(left,D).union(symAllVars(right,D))
-  assert symIsPoly(left,v,D), "Problem left " + left 
-  assert symIsPoly(right,v,D), "Problem right " + right
+  assert symIsPoly(left,v,D), "Problem left >>>" + left + "<<<"
+  assert symIsPoly(right,v,D), "Problem right >>>" + right + "<<<"
   leftTerms = left.split("+")
   rightTerms= right.split("+")
   # multiply term by term
@@ -1185,8 +1419,93 @@ def symMulPolyPoly(left, right, D):
       resTerms = resTerms + "+" + tmpTerm if resTerms != "" else tmpTerm
   resTerms = symSortTerms(resTerms,v,D)
   resTerms = symAddUp(resTerms,D)
+  if resTerms == "": resTerms = "0*"
   return resTerms    
 
+
+def symMultMatVec(inMat,inVec,D,relaxed=False):
+  """
+  Symbolic computation of "Ab" for A a matrix and b a vector over flipInts.
+
+  Parameters
+  ----------
+  inMat : list
+    List of list of str. Matrix A.
+  inVec : list
+    List of str. Vector b.
+  D : int
+    Generates the corresponding FlipInts.
+  relaxed : bool, optional
+    Skips the check if all elements are from the correspondig FlipInts. The default is False.
+
+  Returns
+  -------
+  list
+    Result of the matrix-vector-multiplication "Ab".
+  """
+  assert isField(D), "Wrong D with "+str(D)
+  # check that the matrix is rectantular and the correct size for inVec
+  i = len(inVec)
+  for j in range(len(inMat)): 
+    assert len(inMat[j]) == i, "matrix inMat[j] with j={} different from i={}".format(j,i)
+  # extract variables    
+  allVars = set()
+  for c in inVec:
+    s = symAllVars(c,D)
+    allVars.update(s)
+  for i in range(len(inVec)):
+    for j in range(len(inMat)):
+      s = symAllVars(inMat[i][j],D)
+      allVars.update(s)
+  # check if input are valid equations
+  for c in inVec:
+    assert symIsPoly(c,allVars,D,relaxed), "Wrong eq with c={} and D={}".format(c,D)  
+  for i in range(len(inVec)):
+    for j in range(len(inMat)):
+      assert symIsPoly(inMat[i][j],allVars,D,relaxed), "Wrong eq with i={}, j={}, inMat[i][j]={} and D={}".format(i,j,inMat[i][j],D)  
+  #  multiply each element in the matrix with the corresponding element in the vector
+  outVec = []
+  for j in range(len(inMat)):
+    outPoly = "+".join(symMultPolyPoly(inVec[i],inMat[j][i],D) for i in range(len(inVec)))
+    outPoly = symAddUp(outPoly,D)
+    outVec.append(outPoly)
+  return outVec
+
+
+def symMultMatMat(A,B,D):
+  """
+  Computes the product A x B for A,B two matrices.
+
+  Parameters
+  ----------
+  A : list
+    (l x m)-matrix, list of lists.
+  B : list
+    (m x n)-matrix, list of lists.
+  D : int
+    Generates the corresponding FlipInts.
+
+  Returns
+  -------
+  list
+    (l x n)-matrix, product of A and B.
+  """
+  l = len(A)
+  m = len(B)
+  assert (m == len(A[0]))
+  n = len(B[0])
+  # create the result
+  R = []
+  for i in range(l):
+    R.append([""] * n)
+  # multiply  
+  for i in range(l):
+    for k in range(n):
+      tmp = "+".join([ symMultPolyPoly(A[i][j],B[j][k],D) for j in range(m) ])
+      tmp = symSortTerms(tmp,set(),D)
+      R[i][k] = symAddUp(tmp,D)
+  return R
+   
 
 def symSubtractTerm(eqStr, subStr, D):
   """
@@ -1259,6 +1578,7 @@ def symAddUp(inEq,D):
   # generate output
   outEq = "+".join([ str(outDict[v])+"*"+v for v in sorted(outDict.keys()) ])
   # delete 0 terms
+  if outEq == "": outEq = "0*"
   assert symIsPoly(inEq,v,D), "Problem Out Eq " + outEq 
   return outEq
 
@@ -1340,7 +1660,7 @@ def symRewriteEqsLin(leftPrefix, leftCnt, rightPrefix, rightCnt, rightSet, D):
     while len(eqs) != 0:
       # check if all equations are linear
       for j in range(len(eqs)): 
-        assert symIsLinear(eqs[j],allVars,D), "Non-linear equation for "+eqs[j]
+        assert symIsAffine(eqs[j],allVars,D), "Non-affine equation for "+eqs[j]
       # find a closed equation with minimal number of terms  
       i = -1; foundEq = -1; foundCnt = 10**100; foundLen = 10**100
       while True:
@@ -1377,6 +1697,1618 @@ def symRewriteEqsLin(leftPrefix, leftCnt, rightPrefix, rightCnt, rightSet, D):
       done = False
     return eqs,fullReplace
 
+
+def symIsSol(eqs,sol,D):
+  """
+  Checks if the input actually solves the system of equations.
+  Copies variables eqs into a new list.
+
+  Parameters
+  ----------
+  eqs : list
+    System of equations, list of str.
+  sol : dict
+    Possible solution for the sytem of equstions eqs.
+  D : int
+    Generating number for the FlipInts.
+
+  Returns
+  -------
+  bool
+    True iff this is a valid solution.
+  """
+  assert isField(D), "Wrong D with "+str(D)
+  # extract variables
+  allVars = set()
+  for e in eqs:
+    s = symAllVars(e,D)
+    allVars.update(s)
+  for r in sol:
+    s = symAllVars(sol[r],D)
+    allVars.update(s)
+  # check if input are valid equations
+  for e in eqs:
+    assert symIsPoly(e,allVars,D,relaxed=True), "Wrong eq with {} and D={}".format(e,D)  
+  # apply the solution, make a deep copy
+  eqs = deepcopy(eqs)
+  for v in sol:
+    eqs = symSetEqsPoly(eqs,allVars,{v: sol[v]},D)
+  # check result
+  outRes = True
+  for e in eqs:
+    if e != "0*": outRes = False
+  return outRes
+
+
+def symSolveLinSys(eqs,D):
+  """
+  Solves a linear system of equations and returns the result as a dict of variables and values.
+
+  Parameters
+  ----------
+  eqs : list
+    Final equations after the solving.
+  D : int
+    Integer generating the corresponding FlipInts.
+
+  Returns
+  -------
+  eqs : list
+    Equations after the solving, should be [].
+  repDict : dict
+    All variables in a dictionary with their corresponding value, e.g. {'a': '9*'}.
+  """
+  assert isField(D), "Wrong D with "+str(D)
+  allVars = set()
+  for e in eqs:
+    s = symAllVars(e,D)
+    # print("s={}".format(s))
+    allVars.update(s)
+  
+  # print("Got all Vars "+str(allVars))
+  for e in eqs:
+    # print("Input {}".format(e))
+    assert symIsPoly(e,allVars,D,relaxed=True), "Wrong eq with {} and D={}".format(e,D)
+  
+  # save them for later
+  inEqs = deepcopy(eqs)
+  
+  # simplify the system, eliminate closed equations
+  repDict = {}
+  done = False
+  while (not done):
+    done = True
+    # check if some polynomial has only one variable - this means the variable is zero
+    # check if we have closed equations
+    while len(eqs) != 0:
+      # divide each line by the gcd of this line
+      for i in range(len(eqs)):
+        fullGCD = functools.reduce(math.gcd, [ int(e.split("*",1)[0]) if e != "0*" else 2*3*5*7*11*13*17*17 for e in eqs[i].split("+") ])
+        if (fullGCD == 1) or (fullGCD == 0): continue
+        # divide the whole line by this gcd
+        termList = []
+        for t in eqs[i].split("+"):
+          f,r = t.split("*",1)
+          f = int(f)
+          assert (f % fullGCD) == 0, "Not divisible by gcd with num={}, gcd={}".format(f,fullGCD)
+          f //= fullGCD
+          termList.append(str("*".join([str(f),r])))
+        eqs[i] = "+".join(termList)  
+        
+      # find a closed equation with minimal number of terms  
+      # one factor for a variable must be odd
+      i = -1; foundEq = -1; foundTerms = 10**100; foundLen = 10**100
+      while True:
+        i += 1    
+        if i >= len(eqs): break
+        
+        # check if we have an odd variable in the equation
+        for t in eqs[i].split("+"):
+          # make sure we have a variable
+          if t.count("*") != 2: continue
+          f,v,r = t.split("*")
+          if (int(f) % 2) == 0: continue
+          tmpTerm = t
+          # check if this equation is shorter
+          eqLen = len(eqs[i])
+          terms = eqs[i].count("+")
+          # print("#terms "+str(terms))
+          # take the shortest equation measured in #terms
+          if (terms < foundTerms) or ((terms == foundTerms) and (eqLen < foundLen)): 
+            foundEq = i; foundTerm = tmpTerm; foundTerms = terms; foundLen = eqLen  
+            # print("found v={}, #={} and len={}".format(foundTerm,foundEq,foundLen))
+      if foundEq == -1: break  # no closed equation      
+      # print("found eq num {} with eq: {}".format(foundEq,eqs[foundEq]))
+      # remove one variable, make sure leading term is 1
+      if eqs[foundEq].count("+") >= 1: t,r = eqs[foundEq].split("+",1)
+      else: t = eqs[foundEq]; r = ""
+      
+      # print("all eqs")
+      # for i in range(len(eqs)):
+      #   print("  {}: {}".format(i,eqs[i]))
+      
+      # remove term from the current equation
+      workingEq = symSubtractTerm(eqs[foundEq], foundTerm, D)
+      f,v,r = foundTerm.split("*")
+      assert f.isdigit(), "Wrong number with "+f
+      f = int(f); 
+      assert (f % 2) == 1, "Wrong factor for "+str(f)
+      assert r == "", "Wrong rest for "+r            
+      f = (D -f) % D; f = invMul(f, D)
+      if workingEq != "": workingEq = symMultFacPoly(f, workingEq, allVars, D)
+      # print("newWorkingEquation "+workingEq)
+      repDict[v] = workingEq
+      # remove var/Eqs
+      del eqs[foundEq]
+      # set the variable accordingly
+      # print("rep "+str({v: repDict[v]}))
+      eqs = symSetEqsPoly(eqs,allVars,{v: repDict[v]},D)
+              
+      done = False   
+    
+    # print("outRep "+str(repDict))  
+    # print("rest {}".format(eqs))
+      
+    # resubstitute the solution
+    doneVars = set()
+    while len(doneVars) < len(repDict):
+      foundSome = False
+      curVar = ""
+      for v in repDict:
+        if v in doneVars: continue
+        # print("  rep try {}".format(repDict[v]))
+        if (repDict[v].count("*") != 1) or (repDict[v].count("+") != 0): continue
+        foundSome = True
+        curVar = v; break
+      if not(foundSome): break
+      
+      doneVars.add(curVar)
+      val = int(repDict[curVar].split("*")[0])
+      for v in repDict:
+        if v == curVar: continue
+        # print("  rep before: v={}, eq={}".format(v,repDict[v]))
+        try: repDict[v] = symSetEqs([repDict[v]],allVars,{curVar: val},D)[0]
+        except Exception: 
+          # System if not solvable
+          # print("Got you!")
+          eqs = inEqs
+          repDict = {}
+          isValid = False
+          return eqs,repDict,isValid
+        # print("  rep after: v={}, eq={}".format(v,repDict[v]))
+    
+    # verify output
+    isValid = symIsSol(eqs,repDict,D)
+    # print("Verify with {}".format(isValid))
+    return eqs,repDict,isValid
+
+
+def symSolveTrimLUupper(U,b,D):
+  """
+  Solves Ux=b for given matrix U and vector b.
+
+  Parameters
+  ----------
+  U : list
+    Matrix as list of lists. Is in the Trimmed LU upper form.
+  b : list
+    Vector. Items are in the form '1*', '3*', ...
+  D : int
+    Integer that generates the corresponding FlipInts.
+
+  Returns
+  -------
+  solDict : dict
+    Solution in the form of a dictionary var:val
+  outVec : list
+    Solution in form of a vector.
+  """
+  assert len(b) == len(U), "Matrix has different size than vector with bIn={} and U={}".format(len(b),len(U))
+  for i in range(len(U)):
+    assert len(b) == len(U[i]), "Matrix-vector has different size than vector with bIn={} and U-vec.{}={}".format(len(b),i,len(U[i]))
+  assert symIsTrimLUupper(U,D), "U does not have bespoke LU upper matrix form"
+  # create a problem polynomial Vector (ppV)  
+  s = len(b)
+  assert (s % 2) == 1, "s is even with {}".format(s)
+  xVars = [ "x%d"%i for i in range(s) ]
+  xVec = [ "1*{}*".format(x) for x in xVars ]
+  ppV = symMultMatVec(U,xVec,D,relaxed=True)
+  for i in range(s):
+    ppV[i] = symSubtractTerm(ppV[i], b[i], D)
+  # housekeeping
+  solDict = {}; outVec = []
+  masterPPv = deepcopy(ppV)
+  # solve row by row
+  for i in reversed(range(s)):
+    eqs = [ ppV[i] ]
+    outEq,outDict,ok = symSolveLinSys(eqs,D)
+    assert ok and outEq == [], "Wrong solution with ok={}, outEq={} and outDict={}".format(ok,outEq,outDict)
+    solDict["x%d"%i] = outDict["x%d"%i]
+    outVec.insert(0,solDict["x%d"%i])
+    rep = { "x%d"%i: symPoly2int(solDict["x%d"%i],D) }
+    ppV = symSetEqs(ppV,xVars,rep,D)
+  # verify if we have a solution
+  assert symIsSol(masterPPv, solDict, D), "Invalid solution for ppV={} and solDict={}".format(masterPPv,solDict)
+  return solDict,outVec
+
+
+def symIsTrimLUupper(U,D):
+  """
+  Verifies if U is in Trimmed LU upper form.
+
+  Parameters
+  ----------
+  U : list
+    List of lists for a matrix.
+  D : int
+    Integer that generates the FlipInts.
+
+  Returns
+  -------
+  bool
+    True iff U is in Trimmed LU upper form.
+  """
+  assert isField(D), "Non-field with {}".format(D)
+  s = len(U)
+  assert (s % 2) == 1, "non-odd s with {}".format(s)
+  # check if the diagonal is non-zero
+  for i in range(s):
+    if U[i][i] == "0*": return False
+  # check if all elements below the diagonal are zero
+  for i in range(s):
+    for j in range(i-1):
+      if U[i][j] != "0*": return False
+  # check if we have an even number of zeros in each row
+  for i in range(s):
+    cnt = U[i].count("0*")
+    if (cnt % 2) == 1: return False
+  return True    
+
+
+def symSolveTrimLUlower(L,b,D):
+  """
+  Solves Lx=b for given matrix L and vector b.
+
+  Parameters
+  ----------
+  L : list
+    Matrix as list of lists. Is in the Trimmed LU lower form.
+  b : list
+    Vector. Items are in the form '1*', '3*', ...
+  D : int
+    Integer that generates the corresponding FlipInts.
+
+  Returns
+  -------
+  solDict : dict
+    Solution in the form of a dictionary var:val
+  outVec : list
+    Solution in form of a vector.
+  """
+  assert len(b) == len(L), "Matrix has different size than vector with bIn={} and Lin={}".format(len(b),len(L))
+  for i in range(len(L)):
+    assert len(b) == len(L[i]), "Matrix-vector has different size than vector with bIn={} and Lin-vec.{}={}".format(len(b),i,len(L[i]))
+  assert symIsTrimLUlower(L,D), "Lin does not have bespoke LU lower matrix form"
+  # create a problem polynomial Vector (ppV)  
+  s = len(b)
+  assert (s % 2) == 1, "s is even with {}".format(s)
+  xVars = [ "x%d"%i for i in range(s) ]
+  xVec = [ "1*{}*".format(x) for x in xVars ]
+  ppV = symMultMatVec(L,xVec,D,relaxed=True)
+  for i in range(s):
+    ppV[i] = symSubtractTerm(ppV[i], b[i], D)
+  # housekeeping
+  solDict = {}; outVec = []
+  masterPPv = deepcopy(ppV)
+  # solve row by row
+  for i in range(s):
+    eqs = [ ppV[i] ]
+    outEq,outDict,ok = symSolveLinSys(eqs,D)
+    assert ok and outEq == [], "Wrong solution with ok={}, outEq={} and outDict={}".format(ok,outEq,outDict)
+    solDict["x%d"%i] = outDict["x%d"%i]
+    outVec.append(solDict["x%d"%i])
+    rep = { "x%d"%i: symPoly2int(solDict["x%d"%i],D) }
+    ppV = symSetEqs(ppV,xVars,rep,D)
+  # verify if we have a solution
+  assert symIsSol(masterPPv, solDict, D), "Invalid solution for ppV={} and solDict={}".format(masterPPv,solDict)
+  return solDict,outVec
+      
+
+def symIsTrimLUlower(L,D):
+  """
+  Verifies if L is in Trimmed LU lower form.
+
+  Parameters
+  ----------
+  L : list
+    List of lists for a matrix.
+  D : int
+    Integer that generates the FlipInts.
+
+  Returns
+  -------
+  bool
+    True iff L is in Trimmed LU lower form.
+  """
+  assert isField(D), "Non-field with {}".format(D)
+  s = len(L)
+  assert (s % 2) == 1, "non-odd s with {}".format(s)
+  # check if the diagonal is non-zero
+  for i in range(s):
+    if L[i][i] == "0*": return False
+  # check if all elements above the diagonal are zero
+  for i in range(s):
+    for j in range(i+1,s):
+      if L[i][j] != "0*": return False
+  # check if we have an even number of zeros in each row
+  for i in range(s):
+    cnt = L[i].count("0*")
+    if (cnt % 2) == 1: return False
+  return True    
+
+
+def rndNearOddPair(D):
+  """
+  Generates a near-odd pair, i.e. (a-b) is even but (a-b)/2 is odd.
+
+  Parameters
+  ----------
+  D : int
+    Integer that generates the corresponding FieldInts.
+
+  Returns
+  -------
+  a : int
+    First part of the near-odd pair.
+  b : int
+    Second part of the near-odd pair.
+  """
+  assert isField(D), "Non-field with {}".format(D)
+  isBespoke = False
+  while not isBespoke:
+    a = random.randint(0,D//2-1)*2+1
+    b = random.randint(0,D//2-1)*2+1
+    diff = (a - b) % D
+    isBespoke = ((diff % 2) == 0) and ((diff // 2) % 2 == 1)
+  return a,b  
+    
+
+def symMatRndBeLUlower(s,D):
+  """
+  Generates a random lower matrix in Bespoke LU form.
+
+  Parameters
+  ----------
+  s : int
+    Dimension of the matrix, must be odd.
+  D : int
+    Integer that generated the FlipInts.
+
+  Returns
+  -------
+  list
+    Matrix as list of lists.
+  """
+  assert isField(D), "Non-field with {}".format(D)
+  assert (s % 2) == 1, "Non-odd s with {}".format(s)
+  # creat output matrix
+  L = []
+  for i in range(s): L.append(["0*"] * s)
+  # start with layer 0
+  L[0][0] = "%d*"%random.randrange(1,D,2)
+  # fill the other layers
+  for layer in range(1,(s // 2)+1):
+    lowerRow = 2*layer-1
+    upperRow = 2*layer
+    for j in range(layer*2+1):
+      a, b = rndNearOddPair(D)
+      L[lowerRow][j], L[upperRow][j] = "%d*"%a, "%d*"%b
+  assert symIsBeLUlower(L,D), "Wrong random generation"
+  return L
+
+
+def symSolveBeLUupper(U,b,D):
+  """
+  For a given equation Ux=b, computes all possible solutions.
+  All values are encoded as polynomials, e.g. 0 -> 0* or 15 -> 15*
+
+  Parameters
+  ----------
+  U : list
+    Matrix as list of lists.
+  b : list
+    Vector as list of integers.
+  D : int
+    Number generating the underlying FlipInts.
+
+  Returns
+  -------
+  resDict : list
+    List of all dictionaries that carry solutions.
+  resOut : list
+    List of all vectors that carry solutions.
+  """
+  def recSolve(layer,ppV,outVec,solDict):
+    if layer < 0:
+      # verify if the solution is correct
+      assert symIsSol(masterPPv, solDict, D), "Invalid solution for ppV={} and solDict={}".format(masterPPv,solDict)
+      # prepare return values      
+      return [solDict], [outVec]
+    # brute force the next layer
+    higherRow = layer*2+1; lowerRow = layer*2
+    bruteX = xVars[higherRow]
+    resDicts = []; resVecs = []  
+    for v in range(1,D+1,2):
+      cutLayers = deepcopy(ppV[lowerRow:lowerRow+2])
+      newCut = symSetEqs(cutLayers,xVars,{bruteX:v},D)
+      outEq,outDict,ok = symSolveLinSys(newCut,D)
+      if not(ok): continue
+      # got down one more layer
+      downPPv = deepcopy(ppV); downOutVec = deepcopy(outVec); downSolDict = deepcopy(solDict)
+      downSolDict[xVars[lowerRow]] = outDict[xVars[lowerRow]]
+      downSolDict[xVars[higherRow]] = "%d*"%v
+      tmpDict = {}
+      tmpDict[xVars[lowerRow]] = symPoly2int(outDict[xVars[lowerRow]],D)
+      downPPv = symSetEqs(downPPv, xVars, tmpDict, D)
+      downPPv = symSetEqs(downPPv, xVars, {bruteX:v}, D)
+      downOutVec.insert(0,"%d*"%v)
+      downOutVec.insert(0,outDict[xVars[lowerRow]])
+      newDicts, newVecs = recSolve(layer-1,downPPv,downOutVec,downSolDict)
+      resDicts += newDicts; resVecs += newVecs
+    return resDicts, resVecs
+  
+  # main function
+  ##################################################################  
+  # make sure all structures are fine
+  assert len(b) == len(U), "Matrix has different size than vector with b={} and U={}".format(len(b),len(U))
+  for i in range(len(U)):
+    assert len(b) == len(U[i]), "Matrix-vector has different size than vector with b={} and U-vec.i={}={}".format(len(b),i,len(U[i]))
+  assert symIsBeLUupper(U,D), "U does not have bespoke LU upper matrix form for {}".format(U)
+  # create a problem polynomial Vector (ppV)  
+  s = len(b)
+  xVars = [ "x%d"%i for i in range(s) ]
+  xVec = [ "1*{}*".format(x) for x in xVars ]
+  ppV = symMultMatVec(U,xVec,D,relaxed=True)
+  for i in range(s):
+    ppV[i] = symSubtractTerm(ppV[i], b[i], D)
+  # housekeeping
+  solDict = {}; outVec = []
+  masterPPv = deepcopy(ppV)
+  # solve row 0
+  eqs = [ ppV[-1] ]
+  outEq,outDict,ok = symSolveLinSys(eqs,D)
+  assert ok and outEq == [], "Wrong solution with ok={}, outEq={} and outDict={}".format(ok,outEq,outDict)
+  solDict["x%s"%(s-1)] = outDict["x%s"%(s-1)]
+  outVec.append(solDict["x%s"%(s-1)])
+  # start recursion for other layers
+  ppV = symSetEqs(ppV,xVars,{xVars[s-1]:symPoly2int(outDict[xVars[-1]],D)},D)
+  resDict, resOut = recSolve((s // 2)-1,ppV,outVec,solDict)
+  return resDict, resOut
+
+
+def symSolveBeLUlower(Lin,bIn,D):
+  """
+  For a given equation Lx=b, computes all possible solutions.
+  All values are encoded as polynomials, e.g. 0 -> 0* or 15 -> 15*
+
+  Parameters
+  ----------
+  Lin : list
+    Matrix as list of lists.
+  bIn : list
+    Vector as list of integers.
+  D : int
+    Number generating the underlying FlipInts.
+
+  Returns
+  -------
+  resDict : list
+    List of all dictionaries that carry solutions.
+  resOut : list
+    List of all vectors that carry solutions.
+  """
+  
+  def recSolve(layer,ppV,outVec,solDict):
+    if 2*layer >= len(masterPPv):
+      # verify if the solution is correct
+      assert symIsSol(masterPPv, solDict, D), "Invalid solution for ppV={} and solDict={}".format(masterPPv,solDict)
+      # prepare return values      
+      return [solDict], [outVec]
+    # brute force the next layer
+    higherRow = layer*2; lowerRow = layer*2-1
+    bruteX = xVars[higherRow]
+    resDicts = []; resVecs = []
+    for v in range(1,D+1,2):
+      cutLayers = deepcopy(ppV[lowerRow:lowerRow+2])
+      newCut = symSetEqs(cutLayers,xVars,{bruteX:v},D)
+      outEq,outDict,ok = symSolveLinSys(newCut,D)
+      if not(ok): continue
+      # got down one more layer
+      downPPv = deepcopy(ppV); downOutVec = deepcopy(outVec); downSolDict = deepcopy(solDict)
+      downSolDict[xVars[lowerRow]] = outDict[xVars[lowerRow]]
+      downSolDict[xVars[higherRow]] = "%d*"%v
+      tmpDict = {}
+      tmpDict[xVars[lowerRow]] = symPoly2int(outDict[xVars[lowerRow]],D)
+      downPPv = symSetEqs(downPPv, xVars, tmpDict, D)
+      downPPv = symSetEqs(downPPv, xVars, {bruteX:v}, D)
+      downOutVec.append(outDict[xVars[lowerRow]])
+      downOutVec.append("%d*"%v)
+      newDicts, newVecs = recSolve(layer+1,downPPv,downOutVec,downSolDict)
+      resDicts += newDicts; resVecs += newVecs
+    return resDicts, resVecs
+           
+  # main function
+  ##################################################################  
+  # make sure all structures are fine
+  assert len(bIn) == len(Lin), "Matrix has different size than vector with bIn={} and Lin={}".format(len(bIn),len(Lin))
+  for i in range(len(Lin)):
+    assert len(bIn) == len(Lin[i]), "Matrix-vector has different size than vector with bIn={} and Lin-vec.{}={}".format(len(bIn),i,len(Lin[i]))
+  assert symIsBeLUlower(Lin,D), "Lin does not have bespoke LU lower matrix form"
+  # create a problem polynomial Vector (ppV)  
+  s = len(bIn)
+  xVars = [ "x%d"%i for i in range(s) ]
+  xVec = [ "1*{}*".format(x) for x in xVars ]
+  ppV = symMultMatVec(Lin,xVec,D,relaxed=True)
+  for i in range(s):
+    ppV[i] = symSubtractTerm(ppV[i], bIn[i], D)
+  # housekeeping
+  solDict = {}; outVec = []
+  masterPPv = deepcopy(ppV)
+  # solve row 0
+  eqs = [ ppV[0] ]
+  outEq,outDict,ok = symSolveLinSys(eqs,D)
+  assert ok and outEq == [], "Wrong solution with ok={}, outEq={} and outDict={}".format(ok,outEq,outDict)
+  solDict["x0"] = outDict["x0"]
+  outVec.append(solDict["x0"])
+  # start recursion for other layers
+  ppV = symSetEqs(ppV,xVars,{xVars[0]:symPoly2int(outDict[xVars[0]],D)},D)
+  resDict, resOut = recSolve(1,ppV,outVec,solDict)
+  return resDict, resOut
+
+
+def symIsBeLUupper(U,D):
+  """
+  Chekcks is a given input actually is a bespoke upper triangular matrix.
+
+  Parameters
+  ----------
+  U : list
+    Matrix as list of list. Elements are numbers as polynomials, i.e. 0 -> 0* or 7 -> 7*
+  D : int
+    Number generating FlipInts.
+
+  Returns
+  -------
+  bool
+    True iff the input is a bespoke lower triangular form.
+  """
+  assert isField(D), "Wrong D with {}".format(D)
+  s = len(U)  
+  assert(s % 2) == 1, "s is even with {}".format(s)
+  for layer in range(s // 2):
+    for i in range(layer*2,layer*2+1):
+      for j in range(layer*2,s):
+        if not(symIsPoly(U[i][j],set(),D)) or (U[i][j] == "0*"): return False
+      for j in range(0,layer*2-1):
+        if U[i][j] != "0*": return False
+    # now check the bespoke condition, i.e. the difference of two rows is a near-odd number
+    higherRow = layer*2
+    lowerRow = layer*2+1
+    for j in range(layer*2,s):
+      diff = (symPoly2int(U[higherRow][j],D) - symPoly2int(U[lowerRow][j],D)) % D
+      # check if diff is near-odd
+      if (diff % 2) == 1: return False
+      diff //= 2
+      if (diff % 2) == 0: return False              
+  # check the last row
+  if not(symIsPoly(U[-1][-1],set(),D)) or (U[-1][-1] == "0*"): return False
+  for j in range(0,-1): 
+    if U[-1][j] != "0*": return False
+  return True      
+
+
+def symIsBeLUlower(L,D):
+  """
+  Chekcks is a given input actually is a bespoke lower triangular matrix.
+
+  Parameters
+  ----------
+  L : list
+    Matrix as list of list. Elements are numbers as polynomials.
+  D : int
+    Number generating FlipInts.
+
+  Returns
+  -------
+  bool
+    True iff the input is a bespoke lower triangular form.
+  """
+  assert isField(D), "Wrong D with {}".format(D)
+  s = len(L)  
+  assert(s % 2) == 1, "s is even with {}".format(s)
+  for layer in range((s // 2) + 1):
+    # first check if all elements are non-zero (right part) or zero (left part)
+    maxLayer = max(0,layer*2-1)
+    for i in range(maxLayer, layer*2+1):
+      for j in range(layer*2+1):
+        if not(symIsPoly(L[i][j],set(),D)) or (L[i][j] == "0*"): return False
+      for j in range(layer*2+1,s):
+        if (L[0][j] != "") and (L[0][j] != "0*"): return False
+    # now check the bespoke condition, i.e. the difference of two rows is a near-odd number
+    if layer == 0: continue
+    higherRow = layer*2
+    lowerRow = layer*2-1
+    for j in range(layer*2 + 1):
+      diff = (symPoly2int(L[higherRow][j],D) - symPoly2int(L[lowerRow][j],D)) % D
+      # check if diff is near-odd
+      if (diff % 2) == 1: return False
+      diff //= 2
+      if (diff % 2) == 0: return False
+  return True    
+
+
+#############################################################
+# Finding trimmed matrices
+# stores the static information for a given matrix class
+@dataclass
+class trmStat:
+  prefix: str
+  direction: int
+  coverVars: list
+  allCoverVars: list
+  
+# stores the iformation for a specific matrix  
+@dataclass
+class trmMat:
+  prefix: str
+  rows: list
+  
+# combines all three matrices and their fitness into one gene  
+@dataclass
+class trmGene:
+  fitness: int
+  matL: trmMat
+  matC: trmMat
+  matU: trmMat
+  
+  
+def trmIsMat(stat,mat):
+  """
+  Verifies if a given stat/mat combination is valid. This includes that all
+  rows in mat are actually subsets of allCoverVars etc.
+
+  Parameters
+  ----------
+  stat : trmStat
+    Static parameters for the optimization.
+  mat : trmMat
+    Concrete matrix for the optimization.
+
+  Returns
+  -------
+  True
+    Iff both inputs are correct.
+  """
+  if stat.prefix != mat.prefix: return False
+  n = len(stat.coverVars)
+  if n != len(stat.allCoverVars): return False
+  if n != len(mat.rows): return False
+  # check if coverVars are in set
+  for i in range(n):
+    c = stat.coverVars[i]
+    if not(c in stat.allCoverVars[i]): return False
+    if not(c in mat.rows[i]): return False
+  # check if row in matrix is fine
+  for i in range(n):
+    if (len(mat.rows[i]) != 2) == 0: return False
+    if not(stat.allCoverVars[i].issuperset(mat.rows[i])): return False
+  return True
+  
+
+def trmIsGene(statL,statC,statU,gene):
+  """
+  Verifies if all stat and all mat are in line.
+
+  Parameters
+  ----------
+  statL : trmStat
+    Static information for the optimization
+  statC : trmStat
+    Static information for the optimization.
+  statU : trmStat
+    Static information for the optimization.
+  gene : trmGene
+    Matrices matL, matC, and matU for optimization.
+
+  Returns
+  -------
+  bool
+    True iff all elements are in line.
+  """
+  if not(trmIsMat(statL,gene.matL)): return False
+  if not(trmIsMat(statC,gene.matC)): return False
+  if not(trmIsMat(statU,gene.matU)): return False
+  return True
+
+  
+def trmRndMat(stat,n,D):
+  """
+  Generate a sparse matrix for the given static input.
+
+  Parameters
+  ----------
+  stat : trmStat
+    Static data for the genetic algorithm.
+  n : int
+    Dimension of the matrix.
+  D : int
+    Modulus of the FlipInts.
+
+  Returns
+  -------
+  trmMat
+    Specific matrix for the general static input.
+  """
+  res = trmMat(stat.prefix,[])
+  # select 1 or 3 elements per row
+  for i in range(n):
+    curSet = set()
+    curSet.add(stat.coverVars[i])
+    if len(stat.allCoverVars[i]) >= 3:
+      setList = list(stat.allCoverVars[i])
+      while len(curSet) < 3: curSet.add(random.choice(setList))
+    res.rows.append(deepcopy(curSet))  
+  return res  
+
+
+def trmEmptyMat(stat,n,D):
+  """
+  Generate an empty sparse matrix for the given static input.
+
+  Parameters
+  ----------
+  stat : trmStat
+    Static data for the genetic algorithm.
+  n : int
+    Dimension of the matrix.
+  D : int
+    Modulus of the FlipInts.
+
+  Returns
+  -------
+  trmMat
+    Specific matrix for the general static input.
+  """
+  res = trmMat(stat.prefix,[])
+  # select 1 or 3 elements per row
+  curSet = set()
+  for i in range(n):  
+    res.rows.append(deepcopy(curSet))  
+  return res  
+  
+  
+def trmGene2mat(setMat,n,D):
+  """
+  Extresses a concrete matrix (gene form) as an explicit matrix.
+
+  Parameters
+  ----------
+  setMat : trmMat
+    Concrete matrix in gene-form that is expressed as a concrete matrix.
+  n : int
+    Dimension of the matrix.
+  D : int
+    Value that generates the FlipInts.
+
+  Returns
+  -------
+  list
+    Symbolic matrix as a list of list.
+  """
+  m = []
+  for i in range(n):
+    m.append(["0*"] * n)
+  for i in range(n):
+    for j in setMat.rows[i]:
+      m[i][j] = "1*" + setMat.prefix + str(i) + "_" + str(j) + "*"
+  return m
+  
+  
+def trmFitness(gene,n,D):  
+  """
+  For a given gene, calculates the fitness.
+
+  Parameters
+  ----------
+  gene : trmGene
+    Gene for the current genetic algorithm, consists of three matrices.
+  n : int
+    Dimension of the matrices.
+  D : int
+    FlipInts is generated by D.
+
+  Returns
+  -------
+  int
+    Fitness value. Larger is better.
+  """
+  assert n == len(gene.matL.rows) == len(gene.matC.rows) == len(gene.matU.rows), "Wrong n with {}".format(n)
+  L = trmGene2mat(gene.matL,n,D)
+  C = trmGene2mat(gene.matC,n,D)
+  U = trmGene2mat(gene.matU,n,D)
+  
+  tmp = symMultMatMat(L,C,D)
+  R = symMultMatMat(tmp,U,D)
+  
+  # count all enries. Each non-zero-entry is 100 points
+  # each non-zero-entry that is active is 200 points
+  res = 0
+  for i in range(n):
+    for j in range(n):
+      if R[i][j] == "0*": continue
+      if R[i][j] != "0*": res += 100
+      if (R[i][j].count("+") % 2) == 0: res += 100
+      
+  # add points for sparcity
+  res += n**2 - sum([ len(gene.matL.rows[i]) for i in range(n) ] ) 
+  res += n**2 - sum([ len(gene.matC.rows[i]) for i in range(n) ] ) 
+  res += n**2 - sum([ len(gene.matU.rows[i]) for i in range(n) ] ) 
+  return res      
+
+  
+def trmIsValid(gene,n,D):
+  """
+  Varifies if the output matrix is expressible over FlipInts. Either, a coefficient vanishes (=0), or it consists 
+  of an odd number of terms. In this case, we call the corresponding gene "valid".
+
+  Parameters
+  ----------
+  gene : trmGene
+    Concrete gene for this optimization problem. Consists of three matrices.
+  n : int
+    Dimension of the matrix.
+  D : int
+    Value that generated the flipInts.
+
+  Returns
+  -------
+  bool
+    True iff the output matrix fulfills the criteria.
+  """
+  assert n == len(gene.matL.rows) == len(gene.matC.rows) == len(gene.matU.rows), "Wrong n with {}".format(n)
+  L = trmGene2mat(gene.matL,n,D)
+  C = trmGene2mat(gene.matC,n,D)
+  U = trmGene2mat(gene.matU,n,D)
+  
+  tmp = symMultMatMat(L,C,D)
+  R = symMultMatMat(tmp,U,D)
+
+  for i in range(n):
+    for j in range(n):
+      if R[i][j] == "0*": continue
+      if (R[i][j].count("+") % 2) == 1: return False
+  return True
+
+
+def trmCntZeros(gene,n,D):
+  """
+  Returns the number of zero coefficients in the output matrix
+
+  Parameters
+  ----------
+  gene : trmGene
+    Concrete gene for this optimization problem. Consists of three matrices.
+  n : int
+    Dimension of the matrix.
+  D : int
+    Value that generated the flipInts.
+
+  Returns
+  -------
+  int
+    Number of zeros in the output.
+  """
+  assert n == len(gene.matL.rows) == len(gene.matC.rows) == len(gene.matU.rows), "Wrong n with {}".format(n)
+  L = trmGene2mat(gene.matL,n,D)
+  C = trmGene2mat(gene.matC,n,D)
+  U = trmGene2mat(gene.matU,n,D)
+  
+  tmp = symMultMatMat(L,C,D)
+  R = symMultMatMat(tmp,U,D)
+
+  cnt = 0
+  for i in range(n):
+    for j in range(n):
+      if R[i][j] == "0*": cnt += 1
+  return cnt
+
+
+def trmMutateEven(statL,statC,statU,p1,n,D):
+  """
+  View each coefficient as a polynomial p. If this polynomial p has an even number of monomials, we call it invalid.
+  This function selects exactly one polynomial p and removes variables in the corresponding gene.
+
+  Parameters
+  ----------
+  statL : trmStat
+    Static information for the matrix L.
+  statC : trmStat
+    Static information for the matrix C.
+  statU : trmStat
+    Static information for the matrix U.
+  p1 : trmGene
+    Parent gene.
+  n : int
+    Dimension of the matrix.
+  D : int
+    This value generates the corresponding FlipInts.
+
+  Returns
+  -------
+  trmGene
+    Child with the corresponding modification.
+  """
+  def delVar(stat,mat,v,n,D):
+    """
+    For a given variable, remove the corresponding elements from the gene.
+
+    Parameters
+    ----------
+    stat : trmStat
+      Static information for this matrix.
+    mat : trmMat
+      Matrix as a list of set, part of the gene of this genetic algorithm.
+    v : str
+      Variable of the form "pX_Y" with p a prefix and X,Y two numbers.
+    n : int
+      Dimension of the matrix.
+    D : int
+      Generates the corresponding FlipInts.
+
+    Returns
+    -------
+    trmMat
+      Matrix with the corresponding modifiction.
+    """
+    vNew = v[1:]
+    vs = vNew.split("_")
+    i = int(vs[0]); j = int(vs[1])
+    if len(mat.rows[i]) < 3: return mat
+    newSize = len(mat.rows[i]) - 2
+    
+    mat.rows[i].remove(j)
+    while len(mat.rows[i]) > newSize:
+      setList = list(mat.rows[i])  
+      mat.rows[i].remove(random.choice(setList))
+      mat.rows[i].add(stat.coverVars[i])
+    return mat
+  
+  # outer method  
+  L = trmGene2mat(p1.matL,n,D)
+  C = trmGene2mat(p1.matC,n,D)
+  U = trmGene2mat(p1.matU,n,D)
+  
+  tmp = symMultMatMat(L,C,D)
+  R = symMultMatMat(tmp,U,D)
+
+  wrongPoly = "0*"
+  for i in range(n):
+    for j in range(n):
+      if (R[i][j].count("+") % 2) == 1: 
+        # we found a wrong entry
+        wrongPoly = R[i][j]
+  if wrongPoly == "0*": return deepcopy(p1)
+  c1 = deepcopy(p1)
+  terms = wrongPoly.split("+")
+  wrongTerm = random.choice(terms)
+  # delete all of these variables if possible
+  allVars = list(symAllVars(wrongTerm,D))
+  v = random.choice(allVars)
+  match v[0]:
+    case 'l': c1.matL = delVar(statL,c1.matL,v,n,D)
+    case 'c': c1.matC = delVar(statC,c1.matC,v,n,D)
+    case 'u': c1.matU = delVar(statU,c1.matU,v,n,D)
+  
+  return c1
+  
+  
+def trmCrossover(statL,statC,statU,p1,p2,n,D):
+  """
+  Crossover between the genes p1 and p2.
+
+  Parameters
+  ----------
+  statL : trmStat
+    Statical information on the matrix L.
+  statC : trmStat
+    Statical information on the matrix L.
+  statU : trmStat
+    Statical information on the matrix L.
+  p1 : trmGene
+    First parent.
+  p2 : trmGene
+    Second parent
+  n : int
+    Dimension of the matrix.
+  D : int
+    Generates the corresponding FlipInts.
+
+  Returns
+  -------
+  trmGene
+    First child.
+  trmGene
+    Second child.
+  """
+  def crossMat(stat,m1,m2):
+    r1 = trmEmptyMat(stat,n,D); r2 = trmEmptyMat(stat,n,D)
+    for i in range(n):
+      if random.randint(0,1) == 0:
+        r1.rows[i] = deepcopy(m1.rows[i])
+        r2.rows[i] = deepcopy(m2.rows[i])
+      else:
+        r1.rows[i] = deepcopy(m2.rows[i])
+        r2.rows[i] = deepcopy(m1.rows[i])
+    return r1,r2
+    
+  c1 = deepcopy(p1); c2 = deepcopy(p2)
+  m1,m2 = crossMat(statL,p1.matL, p2.matL)
+  c1.matL = m1; c1.matL = m1;
+  m1,m2 = crossMat(statC,p1.matC, p2.matC)
+  c1.matC = m1; c1.matC = m1;
+  m1,m2 = crossMat(statU,p1.matU, p2.matU)
+  c1.matU = m1; c1.matU = m1;
+  return c1,c2
+   
+
+def trmMutatePlus(statL,statC,statU,p1,n,D):
+  """
+  Adds two random elements fron a random row. The result is given and copied via deepcopy.
+
+  Parameters
+  ----------
+  statL : trmStat
+    Static information for the matrix L.
+  statC : trmStat
+    Static information for the matrix L.
+  statU : trmStat
+    Static information for the matrix L.
+  p1 : trmGene
+    Parent of this operation
+  n : int
+    Dimension of the matrix.
+  D : int
+    Value for the FlipInts.
+
+  Returns
+  -------
+  trmGene
+    Child of this operation.
+  """
+  def mutateMat(stat,mIn):
+    i = random.randint(0,n-1)
+    if len(stat.allCoverVars[i]) - len(mIn.rows[i]) < 2: return mIn
+    newSize = len(mIn.rows[i]) + 2
+    setList = list(stat.allCoverVars[i])
+    while len(mIn.rows[i]) < newSize:
+      mIn.rows[i].add(random.choice(setList))
+    return mIn  
+  
+  c1 = deepcopy(p1)
+  out = random.randint(0,2)
+  match out:
+    case 0: c1.matL = mutateMat(statL, p1.matL)
+    case 1: c1.matC = mutateMat(statC, p1.matC)
+    case 2: c1.matU = mutateMat(statU, p1.matU)
+  return c1  
+
+
+def trmMutateMinus(statL,statC,statU,p1,n,D):
+  """
+  Removes two random elements fron a random row. The result is given and copied via deepcopy.
+
+  Parameters
+  ----------
+  statL : trmStat
+    Static information for the matrix L.
+  statC : trmStat
+    Static information for the matrix L.
+  statU : trmStat
+    Static information for the matrix L.
+  p1 : trmGene
+    Parent of this operation
+  n : int
+    Dimension of the matrix.
+  D : int
+    Value for the FlipInts.
+
+  Returns
+  -------
+  trmGene
+    Child of this operation.
+  """
+  def mutateMat(stat,mIn):
+    i = random.randint(0,n-1)
+    if len(mIn.rows[i]) < 3: return mIn
+    newSize = len(mIn.rows[i]) - 2
+    
+    while len(mIn.rows[i]) > newSize:
+      setList = list(mIn.rows[i])  
+      mIn.rows[i].remove(random.choice(setList))
+      mIn.rows[i].add(stat.coverVars[i])
+    return mIn  
+  
+  c1 = deepcopy(p1)
+  out = random.randint(0,2)
+  match out:
+    case 0: c1.matL = mutateMat(statL, p1.matL)
+    case 1: c1.matC = mutateMat(statC, p1.matC)
+    case 2: c1.matU = mutateMat(statU, p1.matU)
+  return c1  
+
+
+def trmMutateSwap(statL,statC,statU,p1,n,D):
+  """
+  Swaps two elements in a random row. The result is given and copied via deepcopy.
+
+  Parameters
+  ----------
+  statL : trmStat
+    Static information for the matrix L.
+  statC : trmStat
+    Static information for the matrix C.
+  statU : trmStat
+    Static information for the matrix U.
+  p1 : trmGene
+    Parent of this operation
+  n : int
+    Dimension of the matrix.
+  D : int
+    Value for the FlipInts.
+
+  Returns
+  -------
+  trmGene
+    Child of this operation.
+  """
+  def mutateMat(stat,mIn):
+    i = random.randint(0,n-1)
+    if len(mIn.rows[i]) < 3: return mIn
+    newSize = len(mIn.rows[i]) - 2
+    while len(mIn.rows[i]) > newSize:
+      setList = list(mIn.rows[i])  
+      mIn.rows[i].remove(random.choice(setList))
+      mIn.rows[i].add(stat.coverVars[i])
+    newSize += 2  
+    setList = list(stat.allCoverVars[i])  
+    while len(mIn.rows[i]) < newSize:
+      mIn.rows[i].add(random.choice(setList))  
+    return mIn  
+  
+  c1 = deepcopy(p1)
+  out = random.randint(0,2)
+  match out:
+    case 0: c1.matL = mutateMat(statL, p1.matL)
+    case 1: c1.matC = mutateMat(statC, p1.matC)
+    case 2: c1.matU = mutateMat(statU, p1.matU)
+  return c1  
+
+
+def trmRndMon(p,D):
+  """
+  For a given polynomial p, randomly select one monomial.
+
+  Parameters
+  ----------
+  p : str
+    Polynomial as a string.
+  D : int
+    Value that generates the FlipInt.
+
+  Returns
+  -------
+  str
+    Concrete monomial.
+  """
+  assert symIsPoly(p,set(),D), "Not a polynomial with {}".format(p)
+  allMons = p.split("+")
+  return random.choice(allMons)
+  
+ 
+def trmMakeValid(statL,statC,statU,p1,D):
+  
+  def addSet(stat,row,inSet):
+    """
+    Adds or removes elements from the input set. Assumes this set is a valid row from a gene.
+
+    Parameters
+    ----------
+    stat : trmStat
+      Static information for this l/c/u matrix.
+    row : int
+      Corresponding row in the matrix.
+    inSet : set
+      Set that needs modification.
+
+    Returns
+    -------
+    set
+      Modified set. In particular, it has an odd number of elements.
+    """
+    coverList = list(stat.allCoverVars[row])
+    inSet.add(stat.coverVars[row])    
+    if len(stat.allCoverVars) < len(inSet):
+      while (len(inSet) % 2) == 0: inSet.add(random.choice(coverList))
+    else: 
+      # we need to delete a variable from inSet
+      while (len(inSet) % 2) == 0: 
+        inSet.discard(random.choice(coverList))
+        inSet.add(stat.coverVars[row])    
+    return inSet  
+    
+  # outer function
+  n = len(p1.matL.rows)
+  c1 = deepcopy(p1)    
+  L = trmGene2mat(p1.matL,n,D)
+  C = trmGene2mat(p1.matC,n,D)
+  U = trmGene2mat(p1.matU,n,D)  
+  tmp = symMultMatMat(L,C,D)
+  R = symMultMatMat(tmp,U,D)  
+  allMons = []
+  for i in range(len(R)):
+    for j in range(len(R[i])):
+      if (R[i][j].count("+") % 2) != 1: continue
+      # we found an invalid coefficient
+      allMons.append(trmRndMon(R[i][j],D)) 
+  # get a set of variables, extract the variables that should be deleted
+  varSet = set()
+  for m in allMons:
+    varSet.update(symAllVars(m,D))
+  varList = list(varSet)
+  random.shuffle(varList)
+  # first delete all variables
+  for v in varList:
+    p = v[0]
+    i,j = v[1:].split("_")
+    i = int(i); j = int(j)
+    assert 0 <= i < n, "i out of range with {}".format(i)
+    assert 0 <= j < n, "j out of range with {}".format(j)
+    match p:
+      case 'l': c1.matL.rows[i].discard(j)
+      case 'c': c1.matC.rows[i].discard(j)
+      case 'u': c1.matU.rows[i].discard(j)
+  
+  # check if all the cover variables are still in the set
+    
+  # fill rows at random if needed
+  for p in ["l", "c", "u"]:
+    for i in range(n):
+      match p:
+        case 'l': size = len(c1.matL.rows[i])
+        case 'c': size = len(c1.matC.rows[i])
+        case 'u': size = len(c1.matU.rows[i])
+      # check if the cover variable is in the set
+      match p:
+        case 'l': reCover = not(statL.coverVars[i] in c1.matL.rows[i])
+        case 'c': reCover = not(statC.coverVars[i] in c1.matC.rows[i])
+        case 'u': reCover = not(statU.coverVars[i] in c1.matU.rows[i])  
+      if ((size % 2) == 1) and not(reCover): continue
+      # two cases - either we can choose a random element from the support, or we need to remove one
+      match p:
+        case 'l': c1.matL.rows[i] = addSet(statL,i,c1.matL.rows[i])
+        case 'c': c1.matC.rows[i] = addSet(statC,i,c1.matC.rows[i])
+        case 'u': c1.matU.rows[i] = addSet(statU,i,c1.matU.rows[i])
+  return c1    
+
+
+def trmRemoveZeros(statL,statC,statU,fullMat,p1,D):
+  """
+  Tries to remove zero-entries in the output matrix.
+  Uses a greedy algorithm for this purpose.
+
+  Parameters
+  ----------
+  statL : trmStat
+    Static information for the matrix L.
+  statC : trmStat
+    Static information for the matrix C.
+  statU : trmStat
+    Static information for the matrix U.
+  fullMat : list
+    List of list, theoretically full matrix as polynoimals as str. Used as potential target matrix.
+  p1 : trmGene
+    Current parent for the geneted algorithm.
+  D : int
+    Creats FlipInts.
+
+  Returns
+  -------
+  trmGene
+    Child with less zeros than the parent.
+  """
+  
+  def updateSet(stat,row,inSet,n,D):
+    """
+    Makes sure the corresponding inSet is well-formed at output.
+    In particular, it only contains variables from the cover set, 
+    this includes the coverVar for the row and has an odd number of elements.
+
+    Parameters
+    ----------
+    stat : trmStat
+      Static information for the current set inSet.
+    row : int
+      Destination row for inSet.
+    inSet : set
+      Set to be modified.
+    n : int
+      Number of rows/columns in the corresponding matrix.
+    D : int
+      Module that generates the corresponding FlipInts.
+
+    Returns
+    -------
+    set
+      Modified inSet.
+    """
+    inSet.intersection_update(stat.allCoverVars[row])
+    inSet.add(stat.coverVars[row])  
+    if (len(inSet) % 2) == 1: return inSet
+    # add coverVars
+    coverList = list(stat.allCoverVars[row])
+    while (len(inSet) % 2) == 0: 
+      if random.randint(0,1) == 0:
+        inSet.add(random.choice(coverList))
+      else: 
+        inSet.discard(random.choice(coverList))
+        inSet.add(stat.coverVars[row])  
+    return inSet
+  
+  n = len(p1.matL.rows)
+  c1 = deepcopy(p1)    
+  L = trmGene2mat(p1.matL,n,D)
+  C = trmGene2mat(p1.matC,n,D)
+  U = trmGene2mat(p1.matU,n,D)  
+  tmp = symMultMatMat(L,C,D)
+  R = symMultMatMat(tmp,U,D)  
+  allMons = []
+  for i in range(len(R)):
+    for j in range(len(R[i])):
+      if R[i][j] != "0*": continue
+      # we found a zero entry
+      allMons.append(trmRndMon(fullMat[i][j],D))  
+  # add these variables to L,C,U
+  varSet = set()
+  for m in allMons:
+    varSet.update(symAllVars(m,D))
+  varList = list(varSet)
+  random.shuffle(varList)
+  for v in varList:
+    p = v[0]
+    i,j = v[1:].split("_")
+    i = int(i); j = int(j)
+    assert 0 <= i < n, "i out of range with {}".format(i)
+    assert 0 <= j < n, "j out of range with {}".format(j)
+    match p:
+      case 'l': c1.matL.rows[i].add(j)
+      case 'c': c1.matC.rows[i].add(j)
+      case 'u': c1.matU.rows[i].add(j)
+  # fix all sets - remove all variables that are not covered
+  for p in ["l","c","u"]:
+    for i in range(n):
+      match p:
+        case 'l': c1.matL.rows[i] = updateSet(statL,i,c1.matL.rows[i],n,D)
+        case 'c': c1.matC.rows[i] = updateSet(statC,i,c1.matC.rows[i],n,D)
+        case 'u': c1.matU.rows[i] = updateSet(statU,i,c1.matU.rows[i],n,D)
+  return c1
+  
+
+def trmWheel(pop):
+  """
+  Wheel of fortune. Selects at random a specific gene for reproduction. Higher fitness is a higher chance of reproduction.
+
+  Parameters
+  ----------
+  pop : list
+    Current population as a list of genes.
+
+  Returns
+  -------
+  trmGene
+    One individual member of the population.
+  """
+  allFit = sum([ a.fitness for a in pop ])
+  rndPoint = random.randint(0,allFit-1)
+  pos = -1
+  while (rndPoint >= 0) and (pos < len(pop)-1):
+    pos += 1
+    rndPoint -= pop[pos].fitness
+  return pop[pos]  
+
+
+def trmFullMat(prefix,n,D):
+  """
+  For a given prefix, generate a matrix with all coefficients set to the corresponding monomial.
+
+  Parameters
+  ----------
+  prefix : str
+    Prefix for the variable. Is the same for the whole matrix.
+  n : int
+    Dimension of the output matrix.
+  D : int
+    Value of the FlipInts.
+
+  Returns
+  -------
+  list
+    Matrix as a list of list of str.
+  """
+  m = [0] * n
+  for i in range(n):
+    m[i] = [0] * n
+  for i in range(n):
+    for j in range(n):
+      m[i][j] = "1*" + prefix + str(i) + "_" + str(j) + "*"
+  return m    
+      
+
+def trmRun():
+  """
+  Main function for the genetic algorithm to search for specific matrices.
+
+  Returns
+  -------
+  None
+  """
+  n = 10; D = 512; size = 10; sndSize = 10
+  
+  print("Param n={}".format(n))
+  
+  # compute the template matrix
+  L = trmFullMat("l",n,D)
+  C = trmFullMat("c",n,D)
+  U = trmFullMat("u",n,D)  
+  tmp = symMultMatMat(L,C,D)
+  fullMat = symMultMatMat(tmp,U,D)
+  
+  # lower matrix
+  statL = trmStat("l", +1, [], [0]*n)
+  coverSet = set() 
+  for i in range(n):
+    statL.coverVars.append(i)
+    coverSet.add(i)
+    statL.allCoverVars[i] = deepcopy(coverSet)
+  # center matrix
+  statC = trmStat("c", -1, [], [0]*n)
+  coverSet = set() 
+  statC.coverVars = [0] * n
+  for pos in range(n):
+    i = (pos + n//2) % n
+    statC.coverVars[i] = pos
+    coverSet.add(pos)
+    statC.allCoverVars[i] = deepcopy(coverSet)
+  # upper matrix
+  statU = trmStat("u", -1, [], [0]*n)
+  coverSet = set() 
+  statU.coverVars = [0] * n
+  for i in range(n-1,-1,-1):
+    statU.coverVars[i] = i
+    coverSet.add(i)
+    statU.allCoverVars[i] = deepcopy(coverSet)
+    
+  pop = []; sndPop = []
+  for i in range(size):
+    newPop = trmGene(-1,trmRndMat(statL,n,D), trmRndMat(statC,n,D), trmRndMat(statU,n,D))
+    # check if valid
+    assert trmIsGene(statL,statC,statU,newPop), "Stat and genes are out of sync"
+    newPop.fitness = trmFitness(newPop,n,D)
+    pop.append(newPop)
+    
+  cnt = 0  
+  oldFit = ""
+  while True:
+    cnt += 1
+    
+    for i in range(20):
+      p1 = trmWheel(pop)
+      p2 = trmWheel(pop)
+      # mix different genes
+      c1, c2 = trmCrossover(statL,statC,statU,p1,p2,n,D)
+      c1.fitness = trmFitness(c1,n,D); c2.fitness = trmFitness(c2,n,D)
+      pop.append(c1); pop.append(c2)
+      assert trmIsGene(statL,statC,statU,c1), "Stat and gene c1 are out of sync"
+      assert trmIsGene(statL,statC,statU,c2), "Stat and gene c2 are out of sync"
+    
+    # mutate a gene
+    p1 = trmWheel(pop)
+    c1 = trmMutatePlus(statL,statC,statU,p1,n,D)
+    c1.fitness = trmFitness(c1,n,D);
+    pop.append(c1)
+    assert trmIsGene(statL,statC,statU,c1), "Stat and gene c1 are out of sync"
+    
+    p1 = trmWheel(pop)
+    c1 = trmMutateMinus(statL,statC,statU,p1,n,D)
+    c1.fitness = trmFitness(c1,n,D);
+    pop.append(c1)
+    assert trmIsGene(statL,statC,statU,c1), "Stat and gene c1 are out of sync"
+    
+    p1 = trmWheel(pop)
+    c1 = trmMutateSwap(statL,statC,statU,p1,n,D)
+    c1.fitness = trmFitness(c1,n,D);
+    pop.append(c1)
+    assert trmIsGene(statL,statC,statU,c1), "Stat and gene c1 are out of sync"
+    
+    # remove elements for wrong genes
+    p1 = trmWheel(pop)
+    c1 = trmMutateEven(statL,statC,statU,p1,n,D)
+    c1.fitness = trmFitness(c1,n,D)
+    pop.append(c1)
+    assert trmIsGene(statL,statC,statU,c1), "Stat and gene c1 are out of sync"
+    
+    # optimize towards valid matrices
+    p1 = trmWheel(pop)
+    c1 = trmMakeValid(statL,statC,statU,p1,D)
+    c1.fitness = trmFitness(c1,n,D)
+    pop.append(c1)
+    assert trmIsGene(statL,statC,statU,c1), "Stat and gene c1 are out of sync"
+    
+    # remove zeros in R if possible
+    p1 = trmWheel(pop)
+    c1 = trmRemoveZeros(statL,statC,statU,fullMat,p1,D)
+    c1.fitness = trmFitness(c1,n,D)
+    pop.append(c1)
+    assert trmIsGene(statL,statC,statU,c1), "Stat and gene c1 are out of sync"
+        
+    # sort and remove
+    pop.sort(key=lambda a: a.fitness, reverse=True)
+    pop = pop[:size]
+    
+    fitStr = ".".join([ str(a.fitness) for a in pop ])
+    if oldFit == fitStr: break
+    oldFit = fitStr
+    
+    # extract the best genes for our output
+    for i in range(sndSize):
+      snd = deepcopy(pop[0])
+      while trmIsValid(snd,n,D) == False:
+        snd = trmMakeValid(statL,statC,statU,snd,D)
+      snd.fitness = trmFitness(snd,n,D)
+      assert trmIsGene(statL,statC,statU,snd), "Stat and gene snd are out of sync"
+      sndPop.append(snd)  
+    sndPop.sort(key=lambda a: trmCntZeros(a,n,D))  
+    sndPop = sndPop[:sndSize]  
+    # feed information back into pop
+    for snd in sndPop:
+      for i in range(10):
+        snd = deepcopy(trmRemoveZeros(statL,statC,statU,fullMat,snd,D))
+        snd.fitness = trmFitness(snd,n,D)
+        assert trmIsGene(statL,statC,statU,snd), "Stat and gene snd are out of sync"
+        pop.append(snd)   
+    # write result to file
+    fileName = "tmpFiles/trm_{:02d}_{}.txt".format(n,cnt % 5)
+    f = open(fileName, 'w', encoding="utf-8")
+    f.write("Count {}\n".format(cnt))
+    f.write("Overall Fitness {}\n".format(fitStr))
+    for snd in sndPop:      
+      L = trmGene2mat(snd.matL,n,D)
+      C = trmGene2mat(snd.matC,n,D)
+      U = trmGene2mat(snd.matU,n,D)      
+      tmp = symMultMatMat(L,C,D)
+      R = symMultMatMat(tmp,U,D)
+      
+      f.write("Fitness {}\n".format(snd.fitness))
+      f.write("L {}\n".format(snd.matL.rows))
+      f.write("C {}\n".format(snd.matC.rows))
+      f.write("U {}\n".format(snd.matU.rows))
+      f.write("Zeros {}\n".format(trmCntZeros(snd,n,D)))
+      for i in range(n):
+        f.write("{}: {}\n".format(i,R[i]))
+      f.write("\n\n")  
+      
+    f.close()  
+
+    
 #############################################################
 # Printing
 def printExamples():
@@ -1445,18 +3377,245 @@ def SboxBijective():
 
 
 def printSym():
+  """
+  Prints the number of open and closed equations for a given set of parameters.
+
+  Returns
+  -------
+  None
+  """
   for j in range(10):
     sSet = dict()
     for i in range(64):
       sSet["s"+str(i)] = random.choice([1,3,5])
     outTup = symRewriteEqsLin("a", 35 , "s", 35, sSet, 512)  
     print("{}. #eqs, #replace: {} {}".format(j,len(outTup[0]),len(outTup[1])))
-   
+
+
+def printNumSolMat():
+  """
+  Computes how many solutions the equation Ax=b for given A,b has.
+  Uses brute force on x.
+  Outputs this both to the screen as to a file.
+
+  Returns
+  -------
+  None
+  """
+  #menuD = [ 4,8,16,32 ]
+  #menuN = [ 3,5 ]
+  #repNum = 10000
+  menuD = [ 8 ]
+  menuN = [ 3 ]
+  repNum = 100
+  
+  prefix = "_matInv"; prefixFull = "_matInvFull"
+  saveState = {}; saveStateFull = {}
+  outStr = ""; fullOut = ""
+  plotState(prefix,saveState,outStr)  
+  
+  for n in menuN:  
+    for D in menuD:
+      allNumSol = { i:0 for i in range((D//2)**n+1) }
+      # generate random equations
+      for repCnt in range(repNum):
+        # generate a random equation
+        A = rndMatOdd(n, D)
+        b = rndVecOdd(n, D)   
+        numSol = 0
+        for tstX in range((D//2)**n):
+          x = []
+          for i in range(n):
+            x.append(2*(tstX % (D//2))+1)
+            tstX //= (D//2)
+          # test our equation
+          outB = applyMatVecOdd(A,x,D)
+          if outB == b: 
+            numSol += 1
+        # check how many solutions we have
+        allNumSol[numSol] += 1
+        
+        if (repCnt % 512) == 0:      
+          outStr = "\nRun n={} D={} with rep={}\n\n".format(n,D,repCnt)
+          # output the number of solutions
+          numOut = 0
+          for k in range((D//2)**n+1): 
+            if allNumSol[k] == 0: continue
+            outStr += "{} & {} ".format(k,allNumSol[k])
+            outStr += "\\\\\n" if (numOut % 5) == 4 else "&   "
+            numOut += 1
+          if outStr != "": outStr += "\\\\\n"
+          plotState(prefix,saveState,outStr)  
+      # end for repCnt    
+      
+      outStr = "\nRun n={} D={} with rep={}\n\n".format(n,D,repCnt)
+      # output the number of solutions
+      numOut = 0
+      for k in range((D//2)**n+1): 
+        if allNumSol[k] == 0: continue
+        outStr += "{} & {} ".format(k,allNumSol[k])
+        outStr += "\\\\\n" if (numOut % 5) == 4 else "&   "
+        numOut += 1
+      if outStr != "": outStr += "\\\\\n"
+      
+      fullOut += outStr
+      plotState(prefix,saveState,outStr)    
+      plotState(prefixFull,saveStateFull,fullOut)
+
+
+def printNumMatSolveable():
+  """
+  Verifies how many trials we can do with the definition of k-computally solvable matrix
+  on random matrices
+
+  Returns
+  -------
+  None
+  """
+  
+  def printAll(final=False):
+    nonlocal outStr
+    nonlocal funOut
+    
+    # output the number of solutions
+    curLine = ""
+    numOut = 0
+    for k in sorted(allNumSol): 
+      curLine += "{} & {} ".format(k,allNumSol[k])
+      curLine += "\\\\\n" if (numOut % 10) == 9 else "&   "
+      numOut += 1
+    if final: 
+      funOut += "\n%Run n={} D={} with rep={}\n".format(n,D,repCnt)
+      funOut += curLine + "\n"
+    outStr += "\nRun n={} D={} with rep={}\n".format(n,D,repCnt)
+    if final: outStr += "\n\nFINAL START\n"
+    outStr += funOut + "\n"
+    if final: outStr += "FINAL END\n\n"
+    if final: print("\nRun n={} D={} with rep={}".format(n,D,repCnt))
+    plotState(prefix,saveState,outStr)  
+  
+  #repNum = 10000
+  menuD = [ 8,16,256,2048 ]
+  # menuN = [ 3,5,11,45,65,73,97,1001  ]
+  menuN = [ 7,9  ]
+  repNum = 100000
+  
+  prefix = "solveMat"; 
+  saveState = {}; 
+  outStr = ""; 
+  funOut = ""
+  plotState(prefix,saveState,outStr)  
+  
+  for n in menuN:  
+    for D in menuD:
+      allNumSol = { }
+      # generate random equations
+      for repCnt in range(repNum):
+        # generate a random equation
+        A = rndMatOdd(n, D)
+        solCnt = 0
+        aCopy = deepcopy(A)
+        while solCnt < 100:
+          if not isMatSolvable(A, 1, D): break
+          A = deepcopy(aCopy)
+          solCnt += 1
+        if solCnt in allNumSol: allNumSol[solCnt] += 1
+        else: allNumSol[solCnt] = 1
+        
+        if (repCnt % 512) == 0: printAll()
+      # end D
+      printAll(final=True)
+  # end for n
+  printAll(final=True)    
+  
+  
+def printNumVecResponsive():
+    """
+    Verifies how many trials we can do with the definition of r-responsiveness for a given matrix A
+
+    Returns
+    -------
+    None
+    """
+    
+    def printAll(final=False):
+      nonlocal outStr, funOut, statOut
+      
+      # output the number of solutions
+      curLine = "{} & {} & {} ".format(n,d,allNumNoSol)
+      numOut = 0
+      for k in sorted(rResponse): 
+        curLine += "& {} & {}".format(k,rResponse[k])
+        curLine += "\\\\\n  & & " if (numOut % 8) == 7 else "  "
+        numOut += 1
+      if (numOut % 8) != 0: curLine += "\\\\\n"   
+      if final: 
+        funOut += "\n%Run n={} d={} with rep={}\n".format(n,d,repCnt)
+        funOut += curLine + "\n\\hline"
+      outStr += "\nRun n={} d={} with rep={}\n".format(n,d,repCnt)
+      outStr += "{}\n".format(curLine)
+      
+      # output statistical data
+      if final: 
+        statList = []
+        for k in range(max(rResponse)+1): 
+          statList.append(0 if not k in rResponse else rResponse[k])
+        # output and give statistical evaluation
+        statOut += "\n%Stat n={} d={} with rep={} and sum={}\n".format(n,d,repCnt,sum(statList))
+        statOut += str(statList) + "\n"
+      
+      if final: outStr += "\n\nFINAL START\n"
+      outStr += funOut + "\n"
+      outStr += statOut + "\n"
+      if final: outStr += "FINAL END\n\n"
+      if final: print("\nRun n={} d={} with rep={}".format(n,d,repCnt))
+      plotState(prefix,saveState,outStr)  
+    # end def printAll
+    ##################
+    
+    #repNum = 10000
+    menu_d = [ 2, 3, 7, 10, 128, 256, 384, 512 ]
+    #menu_d = [ 2, 3, 7, 10, 256, 512 ]
+    menuN = [ 3,5,7,11,15,31 ]
+    repNum = 100000
+    
+    prefix = "solveMat"; 
+    saveState = {}; 
+    outStr = ""; funOut = ""; statOut = ""
+    plotState(prefix,saveState,outStr)  
+    
+    for n in menuN:  
+      for d in menu_d:
+        D = 2**(d+1)
+        allNumNoSol = 0
+        rResponse = { }
+        # generate random equations
+        for repCnt in range(repNum):
+          # generate a random equation
+          A = rndMatOdd(n, D)
+          aCopy = deepcopy(A)
+          if not isMatSolvable(A, 1, D): allNumNoSol += 1; continue
+          A = deepcopy(aCopy)
+          # find r-responsiveness
+          rResCnt = 0
+          for loopCnt in range(100):
+            A = deepcopy(aCopy)
+            if isMatSolvable(A, 1, D): rResCnt += 1
+          if not rResCnt in rResponse: rResponse[rResCnt] = 0
+          rResponse[rResCnt] += 1
+            
+          if (repCnt % 512) == 0: printAll()
+        # end D
+        printAll(final=True)
+    # end for n
+    printAll(final=True)   
+
+    
 
 #############################################################
 # Unit testing
 def testAll():
-  print("Start Testing")
+  print("Start Testing FlipInts")
 
   if invMul(1,8) != 1: print('Error invMul.1')
   if invMul(3,8) != 3: print('Error invMul.2')
@@ -1721,6 +3880,7 @@ def testAll():
   assert not(symIsPoly("1*a1*b1*+c1*",set(["a1","b1","c1"]),16))
   assert symIsPoly("1*",set([]),16)
   assert symIsPoly("0*",set([]),16), "symIsPoly 0"
+  assert not(symIsPoly("",set([]),16)), "symIsPoly ><" 
   
   assert symPolyIsOdd("1*a*",16), "symIsOutOdd.1"
   assert symPolyIsOdd("1*a*+1*b*",16) == False, "symIsOutOdd.2"
@@ -1730,6 +3890,7 @@ def testAll():
   assert symIsLinear("1*a*b*",["a","b"],16) == False, "symIsLinear.2"
   assert symIsLinear("1*a*+5*b*",["a","b"],16), "symIsLinear.3"
   assert symIsLinear("1*",["a","b"],16) == False, "symIsLinear.4"
+  assert symIsLinear("0*",[],16) == False, "symIsLinear.5"
   
   outSet = symAllVars("1*a*b*",16)
   assert outSet == set(["a","b"]), "symAllVars.1 wrong for "+str(outSet)
@@ -1773,8 +3934,10 @@ def testAll():
   outStr = symSortTerms("1*b*3*c*+a*b*3*5*+a*7*",["a","b","c"],16)
   assert outStr == "3*b*c*+15*a*b*+7*a*", "symSortTerms.6: "+outStr
   
-  res = symMulPolyPoly("1*a_1*+1*b_1*i*", "1*a_2*+1*b_2*i*", 256) 
-  assert res == "1*a_1*a_2*+1*a_1*b_2*i*+1*a_2*b_1*i*+1*b_1*b_2*i*i*", "symMulPolyPoly.1: "+res
+  res = symMultPolyPoly("1*a_1*+1*b_1*i*", "1*a_2*+1*b_2*i*", 256) 
+  assert res == "1*a_1*a_2*+1*a_1*b_2*i*+1*a_2*b_1*i*+1*b_1*b_2*i*i*", "symMultPolyPoly.1: "+res
+  res = symMultPolyPoly("1*a_1*", "0*", 256) 
+  assert res == "0*", "symMultPolyPoly.2: "+res
   
   outEq = symAddUp("1*a*b*+3*a*b*+5*a*b*",16)
   assert outEq == "9*a*b*", "symAddUp.1 wrong with " + outEq
@@ -1788,7 +3951,7 @@ def testAll():
   outStr = str(symSetEqsPoly(["1*a*b*+3*a*c*+1*b*c*"],set(["a","b","c"]),{"a":"1*b*+1*c*"},16))
   assert outStr == "['1*b*b*+5*b*c*+3*c*c*']", "symSetEqsPoly.3 with "+outStr
   outStr = str(symSetEqsPoly(["7*a*b*+9*a*b*"],set(["a","b","c"]),{"a":"1*b*"},16))
-  assert outStr == "[]", "symSetEqsPoly.4 with "+outStr
+  assert outStr == "['0*']", "symSetEqsPoly.4 with >>>"+outStr+"<<<"
   
   sSet = {"s0":1, "s1":3, "s2":1}
   outTup = str(symRewriteEqsLin("a", 3, "s", 3, sSet, 16))
@@ -1801,424 +3964,360 @@ def testAll():
   assert outTup == "(['5*a1*', '3*a1*'], {'a0': '5*a1*'})", "symRewriteEqsLin.3: "+outTup
   sSet = {"s0":1, "s1":3, "s2":3, "s3":3, "s4":1, "s5":3, "s6":1, "s7":3}
   outTup = str(symRewriteEqsLin("a", 4, "s", 8, sSet, 16))
-  assert outTup == "(['5*a1*+2*a3*', '2*a1*+9*a3*', '3*a1*+6*a3*', '3*a3*'], {'a2': '5*a3*', 'a0': '5*a1*', 'a1': '8*a3*+7*a1*', 'a3': '1*a3*'})", "symReweriteEqsLine.4: "+outTup
+  assert outTup == "(['5*a1*+2*a3*', '2*a1*+9*a3*', '3*a1*+6*a3*', '3*a3*'], {'a2': '5*a3*', 'a0': '5*a1*', '': '15*', 'a1': '8*a3*+7*a1*', 'a3': '1*a3*'})", "symReweriteEqsLine.4: "+outTup
   sSet = {"s0":1, "s1":3}
   outTup = str(symRewriteEqsLin("a", 3, "s", 2, sSet, 512))
   assert outTup == "(['57*a2*', '3*a2*'], {'a1': '341*a2*', 'a0': '57*a2*'})", "symRewriteEqsLin.4"
   
-  # [3]
-  # symSolveAxb([[1]],[3],16)
-  # []
-  # symSolveAxb([[1,3,5],[1,7,3],[3,3,3]],[9,3,9],16)
-  # [5, 1, 13]
-  # symSolveAxb([[1,3,5],[1,7,3],[3,7,7]],[9,3,9],16)
-  # [9, 13, 5]
+  # 3 x 3 matrix
+  res = symMultMatVec([["1*","1*","1*"], ["1*","1*","1*"], ["1*","1*","1*"]], ["1*","1*","1*"], 16)
+  assert res == ['3*', '3*', '3*'], "Wrong output symMultMatVec.1 with res={}".format(res)
+  res = symMultMatVec([["1*","1*","1*"], ["1*","3*","1*"], ["1*","1*","3*"]], ["1*","3*","5*"], 16)
+  assert res == ['9*', '15*', '3*'], "Wrong output symMultMatVec.2 with res={}".format(res)
+  res = symMultMatVec([["3*","5*","7*"], ["1*","5*","7*"], ["7*","5*","1*"]], ["1*","3*","5*"], 16)
+  assert res == ['5*', '3*', '11*'], "Wrong output symMultMatVec.3 with res={}".format(res)
+  res = symMultMatVec([["3*","1*","1*","1*","1*"], ["1*","5*","1*","1*","1*"], ["1*","1*","7*","1*","1*"], 
+                       ["1*","1*","1*","9*","1*"], ["1*","1*","1*","1*","13*"]], 
+                      ["1*","3*","5*","7*","11*"], 64)
+  # 5 x 5 matrix
+  assert res == ['29*', '39*', '57*', '19*', '31*'], "Wrong output symMultMatVec.4 with res={}".format(res)  
+  # symbolic input
+  res = symMultMatVec([["1*","1*","1*"], ["1*","1*","1*"], ["1*","1*","1*"]], ["1*a*","1*b*","1*c*"], 16)
+  assert res == ['1*a*+1*b*+1*c*', '1*a*+1*b*+1*c*', '1*a*+1*b*+1*c*'], "Wrong output symMultMatVec.5 with res={}".format(res)
   
+  eqsIn = ["5*a*+3*"]
+  eqs,varDict,ok = symSolveLinSys(eqsIn,16)
+  assert (len(eqs) == 0) and (len(varDict) == 1) and (varDict['a'] == '9*'), "Wrong res symSolveLinSys.1 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  assert symIsSol(eqsIn,varDict,D), "Wrong solution for symSolveLinSys.1 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  eqsIn = ["5*a*+3*","3*a*+7*b*+8*"]
+  eqs,varDict,ok = symSolveLinSys(eqsIn,16)
+  assert (len(eqs) == 0) and (len(varDict) == 2) and (varDict['a'] == '9*') and (varDict['b'] == '11*'), "Wrong res symSolveLinSys.2 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  assert symIsSol(eqsIn,varDict,D), "Wrong solution for symSolveLinSys.2 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  eqsIn = ["3*a*+7*b*+8*", "5*a*+3*"]
+  eqs,varDict,ok = symSolveLinSys(eqsIn,16)
+  assert (len(eqs) == 0) and (len(varDict) == 2) and (varDict['a'] == '9*') and (varDict['b'] == '11*'), "Wrong res symSolveLinSys.3 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  assert symIsSol(eqsIn,varDict,D), "Wrong solution for symSolveLinSys.3 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  eqsIn = ["3*a*+1*b*+10*", "5*a*+3*b*+2*", "3*a*+5*b*+14*"]
+  eqs,varDict,ok = symSolveLinSys(eqsIn,16)
+  assert (eqs == ['0*']) and (len(varDict) == 2) and (varDict['a'] == '13*') and (varDict['b'] == '15*'), "Wrong res symSolveLinSys.4 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  assert symIsSol(eqsIn,varDict,D), "Wrong solution for symSolveLinSys.4 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  eqsIn = ["3*a*+1*b*+10*", "5*a*+3*b*+2*", "3*a*+5*b*+14*", "1*a*+7*"]
+  eqs,varDict,ok = symSolveLinSys(eqsIn,16)
+  assert (eqs == ['0*','0*']) and (len(varDict) == 2) and (varDict['a'] == '9*') and (varDict['b'] == '11*'), "Wrong res symSolveLinSys.5 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  assert symIsSol(eqs,varDict,D), "Wrong solution for symSolveLinSys.5 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  eqsIn = ["3*a*+1*b*+10*", "5*a*+3*b*+2*", "3*a*+5*b*+14*", "1*a*+11*"]
+  eqs,varDict,ok = symSolveLinSys(eqsIn,16)
+  assert (eqs == ['0*','0*']) and (len(varDict) == 2) and (varDict['a'] == '5*') and (varDict['b'] == '7*'), "Wrong res symSolveLinSys.6 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  assert symIsSol(eqs,varDict,D), "Wrong solution for symSolveLinSys.6 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  eqsIn = ["3*a*+1*b*+10*", "5*a*+3*b*+2*", "3*a*+5*b*+14*", "1*a*+15*"]
+  eqs,varDict,ok = symSolveLinSys(eqsIn,16)
+  assert (eqs == ['0*','0*']) and (len(varDict) == 2) and (varDict['a'] == '1*') and (varDict['b'] == '3*'), "Wrong res symSolveLinSys.7 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  assert symIsSol(eqs,varDict,D), "Wrong solution for symSolveLinSys.7 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  eqsIn = ["3*a*+1*b*+10*", "5*a*+3*b*+2*", "1*a*+14*"] 
+  eqs,varDict,ok = symSolveLinSys(eqsIn,16)
+  assert (len(eqs) == 3) and (len(varDict) == 0), "Wrong res symSolveLinSys.8 with eqs"+str(eqs)+" and varDict="+str(varDict)
+  eqsIn = ["1*a*+3*b*+5*c*+7*", "3*a*+3*b*+7*c*+13*", "5*a*+3*b*+5*c*+11*", "7*a*+5*b*+11*c*+3*"]
+  eqs,varDict,ok = symSolveLinSys(eqsIn,16)
+  assert not(ok), "Wrong solution for symSolveLinSys.9 with ok={}, eqs={} and varDict={}".format(ok,eqs,varDict)
+  
+  assert symIsPolyInt("0*",16), "Got False symIsPolyInt.1"
+  assert not(symIsPolyInt("0*a*",16)), "Got True symIsPolyInt.2"
+  assert not(symIsPolyInt("0*+1*",16)), "Got True symIsPolyInt.3"
+  
+  res = symPoly2int("2*",16)
+  assert res == 2, "Wrong output for symPoly2int.1 with {}".format(res)
+  res = symPoly2int("0*",16)
+  assert res == 0, "Wrong output for symPoly2int.2 with {}".format(res)
+  
+  L = [["0*"]]
+  assert symIsBeLUlower(L,16) == False, "Error symIsBeLUlower with {}"+format(L)
+  L = [["1*"]]
+  assert symIsBeLUlower(L,16) == True, "Error symIsBeLUlower with {}"+format(L)
+  L = [["1*", "0*", "0*"],
+       ["1*", "3*", "3*"],
+       ["3*", "5*", "5*"]]
+  assert symIsBeLUlower(L,16) == True, "Error symIsBeLUlower with {}"+format(L)
+  L = [["1*", "0*", "0*"],
+       ["1*", "3*", "3*"],
+       ["1*", "5*", "5*"]]
+  assert symIsBeLUlower(L,16) == False, "Error symIsBeLUlower with {}"+format(L)
+  L = [["1*", "0*", "0*"],
+       ["1*", "0*", "3*"],
+       ["3*", "5*", "5*"]]
+  assert symIsBeLUlower(L,16) == False, "Error symIsBeLUlower with {}"+format(L)
+  L = [["1*", "0*", "0*"],
+       ["1*", "3*", "3*"],
+       ["3*", "5*", "0*"]]
+  assert symIsBeLUlower(L,16) == False, "Error symIsBeLUlower with {}"+format(L)
+  L = [["1*", "0*", "0*",  "0*", "0*"],
+       ["1*", "3*", "3*",  "0*", "0*"],
+       ["3*", "5*", "5*",  "0*", "0*"],
+       ["3*", "7*", "11*", "7*", "3*"],
+       ["5*", "5*", "5*",  "1*", "5*"]]
+  assert symIsBeLUlower(L,16) == True, "Error symIsBeLUlower with {}"+format(L)
+
+  # apply and solve the equation
+  L = [["1*", "0*", "0*"],
+       ["1*", "7*", "3*"],
+       ["3*", "9*", "5*"]
+      ]
+  inX = ["1*", "3*", "5*"]  
+  outY = symMultMatVec(L,inX,16,relaxed=True)
+  allDicts, allVecs = symSolveBeLUlower(L,outY,16)
+  assert inX in allVecs, "Solution not found sysSolveBeLUlower.1"
+  L = [["1*", "0*", "0*",  "0*", "0*"],
+       ["1*", "3*", "3*",  "0*", "0*"],
+       ["3*", "5*", "5*",  "0*", "0*"],
+       ["3*", "7*", "5*",  "3*", "5*"],
+       ["5*", "5*", "3*", "13*", "3*"]]
+  inX = ["1*", "3*", "5*", "3*", "5*"]
+  outY = symMultMatVec(L,inX,16,relaxed=True)
+  allDicts, allVecs = symSolveBeLUlower(L,outY,16)
+  assert inX in allVecs, "Solution not found sysSolveBeLUlower.2"
+  L = [["1*", "0*", "0*",  "0*", "0*", "0*", "0*"],
+       ["1*", "3*", "3*",  "0*", "0*", "0*", "0*"],
+       ["3*", "5*", "9*",  "0*", "0*", "0*", "0*"],
+       ["3*", "7*", "5*",  "3*", "5*", "0*", "0*"],
+       ["5*", "5*", "3*", "13*", "3*", "0*", "0*"],
+       ["3*", "7*", "5*",  "3*", "5*", "7*", "11*"],
+       ["5*", "5*", "3*", "13*", "3*", "1*", "1*"]
+       ]
+  inX = ["1*", "3*", "5*", "3*", "5*","1*", "7*"]
+  outY = symMultMatVec(L,inX,16,relaxed=True)
+  allDicts, allVecs = symSolveBeLUlower(L,outY,16)
+  assert inX in allVecs, "Solution not found sysSolveBeLUlower.3"
+
+  # upper matrix
+  U = [["0*"]]
+  assert symIsBeLUupper(U,16) == False, "Error symIsBeLUupper with {}"+format(U)
+  U = [["1*"]]
+  assert symIsBeLUupper(U,16) == True, "Error symIsBeLUupper with {}"+format(U)
+  U = [["1*", "3*", "3*"],
+       ["3*", "5*", "5*"],
+       ["0*", "0*", "1*"]]
+  assert symIsBeLUupper(U,16) == True, "Error symIsBeLUupper with {}"+format(U)
+  U = [["1*", "3*", "3*"],
+       ["1*", "5*", "5*"],
+       ["0*", "0*", "1*"]]
+  assert symIsBeLUupper(U,16) == False, "Error symIsBeLUupper with {}"+format(U)
+  U = [["1*", "0*", "3*"],
+       ["3*", "5*", "5*"],
+       ["0*", "0*", "1*"]]
+  assert symIsBeLUupper(U,16) == False, "Error symIsBeLUupper with {}"+format(U)
+  U = [["1*", "3*", "3*"],
+       ["3*", "5*", "0*"],
+       ["0*", "0*", "1*"]]
+  assert symIsBeLUupper(U,16) == False, "Error symIsBeLUupper with {}"+format(U)
+  U = [["3*", "7*", "11*", "7*", "3*"],
+       ["5*", "5*", "5*",  "1*", "5*"],
+       ["0*", "0*", "1*",  "3*", "3*" ],
+       ["0*", "0*", "3*",  "5*", "5*"],
+       ["0*", "0*", "0*",  "0*", "1*"],
+       ]
+  assert symIsBeLUupper(U,16) == True, "Error symIsBeLUlower with {}"+format(U)  
+  U = [["3*", "7*", "11*", "7*", "3*"],
+       ["5*", "5*", "5*",  "1*", "5*"],
+       ["0*", "0*", "1*",  "3*", "3*" ],
+       ["0*", "0*", "3*",  "5*", "5*"],
+       ["0*", "0*", "0*",  "0*", "7*"],
+       ]
+  assert symIsBeLUupper(U,16) == True, "Error symIsBeLUlower with {}"+format(U)  
+  # apply and solve the equation
+  U = [["1*", "3*", "3*"],
+       ["3*", "5*", "5*"],
+       ["0*", "0*", "1*"]
+      ]
+  inX = ["1*", "3*", "5*"]  
+  outY = symMultMatVec(U,inX,16,relaxed=True)
+  allDicts, allVecs = symSolveBeLUupper(U,outY,16)
+  assert inX in allVecs, "Solution not found sysSolveBeLUupper.1"
+  U = [["1*", "3*", "3*"],
+       ["3*", "5*", "5*"],
+       ["0*", "0*", "5*"]
+      ]
+  inX = ["1*", "3*", "5*"]  
+  outY = symMultMatVec(U,inX,16,relaxed=True)
+  allDicts, allVecs = symSolveBeLUupper(U,outY,16)
+  assert inX in allVecs, "Solution not found sysSolveBeLUupper.2"
+  U = [["3*", "7*", "11*", "7*", "3*"],
+       ["5*", "5*", "5*",  "1*", "5*"],
+       ["0*", "0*", "1*",  "3*", "3*" ],
+       ["0*", "0*", "3*",  "5*", "5*"],
+       ["0*", "0*", "0*",  "0*", "7*"],
+       ]
+  inX = ["1*", "3*", "5*", "9*", "11*"]  
+  outY = symMultMatVec(U,inX,16,relaxed=True)
+  allDicts, allVecs = symSolveBeLUupper(U,outY,16)
+  assert inX in allVecs, "Solution not found sysSolveBeLUupper.3"
+
+  # TrimLUlower
+  L = [["3*", "0*", "0*"],
+       ["0*", "0*", "0*"],
+       ["1*", "3*", "5*"]
+      ]
+  assert symIsTrimLUlower(L,16) == False, "Error with symIsTrimLUlower.1"
+  L = [["3*", "0*", "0*"],
+       ["0*", "7*", "1*"],
+       ["1*", "3*", "5*"]
+      ]
+  assert symIsTrimLUlower(L,16) == False, "Error with symIsTrimLUlower.2"
+  L = [["3*", "0*", "0*"],
+       ["1*", "7*", "0*"],
+       ["1*", "3*", "5*"]
+      ]
+  assert symIsTrimLUlower(L,16) == False, "Error with symIsTrimLUlower.3"
+  L = [["3*", "0*", "0*"],
+       ["0*", "7*", "0*"],
+       ["1*", "3*", "5*"]
+      ]
+  assert symIsTrimLUlower(L,16) == True, "Error with symIsTrimLUlower.4"
+  # verification is done inside of the functio
+  b = ["1*", "5*", "9*"]
+  d,v = symSolveTrimLUlower(L,b,16)
+  b = ["5*", "5*", "9*"]
+  d,v = symSolveTrimLUlower(L,b,16)
+  b = ["3*", "5*", "9*"]
+  d,v = symSolveTrimLUlower(L,b,16)
+  
+  # TrimLUupper
+  U = [["3*", "1*", "3*"],
+       ["0*", "0*", "0*"],
+       ["0*", "0*", "5*"]
+      ]
+  assert symIsTrimLUupper(U,16) == False, "Error with symIsTrimLUupper.1"
+  U = [["3*", "1*", "3*"],
+       ["1*", "7*", "0*"],
+       ["0*", "0*", "5*"]
+      ]
+  assert symIsTrimLUupper(U,16) == False, "Error with symIsTrimLUupper.2"
+  U = [["3*", "1*", "5*"],
+       ["0*", "7*", "1*"],
+       ["0*", "0*", "5*"]
+      ]
+  assert symIsTrimLUupper(U,16) == False, "Error with symIsTrimLUupper.3"
+  U = [["3*", "1*", "3*"],
+       ["0*", "7*", "0*"],
+       ["0*", "0*", "5*"]
+      ]
+  assert symIsTrimLUupper(U,16) == True, "Error with symIsTrimLUupper.4"
+  
+  # verification is done inside of the function
+  b = ["1*", "5*", "9*"]
+  d,v = symSolveTrimLUupper(U,b,16)
+  b = ["5*", "5*", "9*"]
+  d,v = symSolveTrimLUupper(U,b,16)
+  b = ["3*", "5*", "9*"]
+  d,v = symSolveTrimLUupper(U,b,16)
+  
+  L = [["3*", "0*", "0*", "0*", "0*"],
+       ["0*", "5*", "0*",  "0*", "0*"],
+       ["1*", "1*", "1*",  "0*", "0*" ],
+       ["1*", "1*", "0*",  "1*", "0*"],
+       ["1*", "1*", "1*",  "1*", "7*"],
+       ]
+  assert symIsTrimLUlower(L,16), "Not Trim lower.1"
+  U = [["3*", "7*", "11*", "7*", "3*"],
+       ["0*", "5*", "0*",  "1*", "5*"],
+       ["0*", "0*", "1*",  "3*", "3*" ],
+       ["0*", "0*", "0*",  "5*", "0*"],
+       ["0*", "0*", "0*",  "0*", "7*"],
+       ]
+  assert symIsTrimLUupper(U,16), "Not Trim upper.1"
+  L = [["1*l0_0*", "0*", "0*", "0*", "0*"],
+       ["0*", "1*l1_1*", "0*",  "0*", "0*"],
+       ["1*l2_0*", "1*l2_1*", "1*l2_2*",  "0*", "0*" ],
+       ["1*l3_0*", "1*l3_1*", "0*",  "1*l3_3*", "0*"],
+       ["1*l4_0*", "1*l4_1*", "1*l4_2*",  "1*l4_3*", "1*l4_4*"],
+       ]
+  assert symIsTrimLUlower(L,16), "Not Trim lower.2"
+  U = [["1*u0_0*", "1*u0_1*", "1*u0_2*", "1*u0_3*", "1*u0_4*"],
+       ["0*", "1*u1_1*", "0*",  "1*u1_3*", "1*u1_4*"],
+       ["0*", "0*", "1*u2_2*",  "1*u2_3*", "1*u2_4*" ],
+       ["0*", "0*", "0*",  "1*u3_3*", "0*"],
+       ["0*", "0*", "0*",  "0*", "1*u4_4*"],
+       ]
+  assert symIsTrimLUupper(U,16), "Not Trim upper.2" 
+  R = symMultMatMat(L,U,16)
+  assert R[0] == ['1*l0_0*u0_0*', '1*l0_0*u0_1*', '1*l0_0*u0_2*', '1*l0_0*u0_3*', '1*l0_0*u0_4*'], "Not right R[0] with {}".format(R[0])
+  assert R[1] == ['0*', '1*l1_1*u1_1*', '0*', '1*l1_1*u1_3*', '1*l1_1*u1_4*'], "Not right R[1] with {}".format(R[1])
+  assert R[2] == ['1*l2_0*u0_0*', '1*l2_0*u0_1*+1*l2_1*u1_1*', '1*l2_0*u0_2*+1*l2_2*u2_2*', '1*l2_0*u0_3*+1*l2_1*u1_3*+1*l2_2*u2_3*', '1*l2_0*u0_4*+1*l2_1*u1_4*+1*l2_2*u2_4*'], "Not right R[2] with {}".format(R[2])
+  assert R[3] == ['1*l3_0*u0_0*', '1*l3_0*u0_1*+1*l3_1*u1_1*', '1*l3_0*u0_2*', '1*l3_0*u0_3*+1*l3_1*u1_3*+1*l3_3*u3_3*', '1*l3_0*u0_4*+1*l3_1*u1_4*'], "Not right R[3] with {}".format(R[3])
+  assert R[4] == ['1*l4_0*u0_0*', '1*l4_0*u0_1*+1*l4_1*u1_1*', '1*l4_0*u0_2*+1*l4_2*u2_2*', '1*l4_0*u0_3*+1*l4_1*u1_3*+1*l4_2*u2_3*+1*l4_3*u3_3*', '1*l4_0*u0_4*+1*l4_1*u1_4*+1*l4_2*u2_4*+1*l4_4*u4_4*'], "Not right R[4] with {}".format(R[4])
+  
+  # select tri-add-coeffs
+  L = [["1*l0_0*", "0*", "0*", "0*", "0*"],
+       ["0*", "1*l1_1*", "0*",  "0*", "0*"],
+       ["0*", "0*", "1*l2_2*",  "0*", "0*" ],
+       ["0*", "0*", "0*",  "1*l3_3*", "0*"],
+       ["1*l4_0*", "1*l4_1*", "1*l4_2*",  "1*l4_3*", "1*l4_4*"],
+       ]
+  assert symIsTrimLUlower(L,16), "Not Trim lower.3"
+  U = [["1*u0_0*", "0*", "0*", "1*u0_3*", "1*u0_4*"],
+       ["0*", "1*u1_1*", "0*",  "1*u1_3*", "1*u1_4*"],
+       ["0*", "0*", "1*u2_2*",  "1*u2_3*", "1*u2_4*" ],
+       ["0*", "0*", "0*",  "1*u3_3*", "0*"],
+       ["0*", "0*", "0*",  "0*", "1*u4_4*"],
+       ]
+  assert symIsTrimLUupper(U,16), "Not Trim upper.3"
+  R = symMultMatMat(L,U,16)
+  assert R[0] == ['1*l0_0*u0_0*', '0*', '0*', '1*l0_0*u0_3*', '1*l0_0*u0_4*'], "Not right R[0] with {}".format(R[0])
+  assert R[1] == ['0*', '1*l1_1*u1_1*', '0*', '1*l1_1*u1_3*', '1*l1_1*u1_4*'], "Not right R[1] with {}".format(R[1])
+  assert R[2] == ['0*', '0*', '1*l2_2*u2_2*', '1*l2_2*u2_3*', '1*l2_2*u2_4*'], "Not right R[2] with {}".format(R[2])
+  assert R[3] == ['0*', '0*', '0*', '1*l3_3*u3_3*', '0*'], "Not right R[3] with {}".format(R[3])
+  assert R[4] == ['1*l4_0*u0_0*', '1*l4_1*u1_1*', '1*l4_2*u2_2*', '1*l4_0*u0_3*+1*l4_1*u1_3*+1*l4_2*u2_3*+1*l4_3*u3_3*', '1*l4_0*u0_4*+1*l4_1*u1_4*+1*l4_2*u2_4*+1*l4_4*u4_4*'], "Not right R[4] with {}".format(R[4])
+  
+  # select tri-add-coeffs
+  L = [["1*l0_0*", "0*", "0*", "0*", "0*"],
+       ["0*", "1*l1_1*", "0*",  "0*", "0*"],
+       ["0*", "0*", "1*l2_2*",  "0*", "0*" ],
+       ["0*", "0*", "0*",  "1*l3_3*", "0*"],
+       ["0*", "0*", "1*l4_2*",  "1*l4_3*", "1*l4_4*"],
+       ]
+  assert symIsTrimLUlower(L,16), "Not Trim lower.4"
+  U = [["1*u0_0*", "0*", "0*", "1*u0_3*", "1*u0_4*"],
+       ["0*", "1*u1_1*", "0*",  "1*u1_3*", "1*u1_4*"],
+       ["0*", "0*", "1*u2_2*",  "0*", "0*" ],
+       ["0*", "0*", "0*",  "1*u3_3*", "0*"],
+       ["0*", "0*", "0*",  "0*", "1*u4_4*"],
+       ]
+  assert symIsTrimLUupper(U,16), "Not Trim upper.4"
+  R = symMultMatMat(L,U,16)
+  assert R[0] == ['1*l0_0*u0_0*', '0*', '0*', '1*l0_0*u0_3*', '1*l0_0*u0_4*'], "Not right R[0] with {}".format(R[0])
+  assert R[1] == ['0*', '1*l1_1*u1_1*', '0*', '1*l1_1*u1_3*', '1*l1_1*u1_4*'], "Not right R[1] with {}".format(R[1])
+  assert R[2] == ['0*', '0*', '1*l2_2*u2_2*', '0*', '0*'], "Not right R[2] with {}".format(R[2])
+  assert R[3] == ['0*', '0*', '0*', '1*l3_3*u3_3*', '0*'], "Not right R[3] with {}".format(R[3])
+  assert R[4] == ['0*', '0*', '1*l4_2*u2_2*', '1*l4_3*u3_3*', '1*l4_4*u4_4*'], "Not right R[4] with {}".format(R[4])
+  
+  A = [["1*","1*","1*"],
+       ["0*","0*","0*"],
+       ["0*","0*","0*"]
+      ]
+  B = [["1*","0*","0*"],
+       ["1*","0*","0*"],
+       ["1*","0*","0*"]
+      ]
+  C = symMultMatMat(A,B,16)
+  assert str(C) == "[['3*', '0*', '0*'], ['0*', '0*', '0*'], ['0*', '0*', '0*']]", "Wrong output symMultMatMat.1"
+  C = symMultMatMat(B,A,16)
+  assert str(C) == "[['1*', '1*', '1*'], ['1*', '1*', '1*'], ['1*', '1*', '1*']]", "Wrong output symMultMatMat.2"
+  A = [["1*","3*","1*"],
+       ["0*","0*","0*"],
+       ["0*","0*","0*"]
+      ]
+  B = [["1*","0*","0*"],
+       ["1*","0*","0*"],
+       ["1*","0*","0*"]
+      ]
+  C = symMultMatMat(B,A,16)
+  assert str(C) == "[['1*', '3*', '1*'], ['1*', '3*', '1*'], ['1*', '3*', '1*']]", "Wrong output symMultMatMat.3"
+    
   # done
-  print("Done Testing")
+  print("Done Testing FlipInts")
   return
+               
 
-
-def symSolveAxb(A,b,D):
-  """
-  For given A,b, solve the equation Ax=b.
-
-  Parameters
-  ----------
-  A : list of lists
-    Matrix.
-  b : list
-    Vector.
-  D : int
-    Generating number for the corresponding FlipInts.
-
-  Returns
-  -------
-  eqs : TYPE
-    DESCRIPTION.
-  repDict : TYPE
-    DESCRIPTION.
-  """
-  n = len(b)
-  assert n >= 1, "Too small n with "+str(n)
-  assert (n % 2) == 1, "Even n with "+str(n)
-  for i in range(n):
-    assert len(A[i]), "Wrong dimension for A at {} with {}".format(n,A[i])
-  for i in range(n):
-    assert isElem(b[i],D), "Non-element for "+str(b[i])
-  for i in range(n):
-    for j in range(n):
-      assert isElem(A[i][j],D), "Non-element for "+str(A[i][j])   
-      
-  allVars = set(["x"+str(i) for i in range(n) ])  
-  eqs = []; repDict = {}
-  for i in range(n):
-    curStr = "+".join([str(A[i][j])+"*x"+str(j)+"*" for j in range(n)] + [ str(D-b[i])+"*" ])
-    eqs.append(curStr)
-    print("Got "+curStr)
-
-  # simplify the system, eliminate closed equations
-  done = False
-  while (not done):
-    done = True
-    # check if some polynomial has only one variable - this means the variable is zero
-    # check if we have closed equations
-    while len(eqs) != 0:
-      # divide each line by the gcd of this line
-      for i in range(len(eqs)):
-        fullGCD = functools.reduce(math.gcd, [ int(e.split("*",1)[0]) for e in eqs[i].split("+") ])
-        if fullGCD == 1: continue
-        # divide the whole line by this gcd
-        termList = []
-        for t in eqs[i].split("+"):
-          f,r = t.split("*",1)
-          f = int(f)
-          assert (f % fullGCD) == 0, "Not divisible by gcd with num={}, gcd={}".format(f,fullGCD)
-          f //= fullGCD
-          termList.append(str("*".join([str(f),r])))
-        eqs[i] = "+".join(termList)  
-        
-      # find a closed equation with minimal number of terms  
-      # one factor for a variable must be odd
-      i = -1; foundEq = -1; foundTerms = 10**100; foundLen = 10**100
-      while True:
-        i += 1    
-        if i >= len(eqs): break
-        
-        # check if we have an odd variable in the equation
-        for t in eqs[i].split("+"):
-          # make sure we have a variable
-          if t.count("*") != 2: continue
-          f,v,r = t.split("*")
-          if (int(f) % 2) == 0: continue
-          tmpTerm = t
-          # check if this equation is shorter
-          eqLen = len(eqs[i])
-          terms = eqs[i].count("+")
-          # !!! make sure we have an odd variable term, only return those
-          if (terms < foundTerms) or ((terms == foundTerms) and (eqLen < foundLen)): 
-            foundEq = i; foundTerm = tmpTerm; foundTerms = terms; foundLen = eqLen  
-            print("found v={}, #={} and len={}".format(foundTerm,foundEq,foundLen))
-      if foundEq == -1: break  # no closed equation      
-      print("found eq num {} with eq: {}".format(foundEq,eqs[foundEq]))
-      # remove one variable, make sure leading term is 1
-      if eqs[foundEq].count("+") >= 1: t,r = eqs[foundEq].split("+",1)
-      else: t = eqs[foundEq]; r = ""
-      
-      print("all eqs")
-      for i in range(len(eqs)):
-        print("{}: {}".format(i,eqs[i]))
-      
-      # remove term from the current equation
-      workingEq = symSubtractTerm(eqs[foundEq], foundTerm, D)
-      f,v,r = foundTerm.split("*")
-      assert f.isdigit(), "Wrong number with "+f
-      f = int(f); 
-      assert (f % 2) == 1, "Wrong factor for "+str(f)
-      assert r == "", "Wrong rest for "+r            
-      f = (D -f) % D; f = invMul(f, D)
-      if workingEq != "": workingEq = symMultFacPoly(f, workingEq, allVars, D)
-      print("newWE "+workingEq)
-      repDict[v] = workingEq
-      # remove var/Eqs
-      del eqs[foundEq]
-      # set the variable accordingly
-      print("rep "+str({v: repDict[v]}))
-      eqs = symSetEqsPoly(eqs,allVars,{v: repDict[v]},D)
-              
-      done = False   
-      
-    print("outRep "+str(repDict))  
-    print("rest {}".format(eqs))
-    
-    # backtrack the system of solutions
-    assert len(eqs) == 0, "Did not solve the system of equations with "+str(eqs)
-    varDict = {}
-    while len(repDict) > 0:
-      repVar = ""
-      for v in repDict:
-        if (repDict[v].count("*") == 1): 
-          repVar = v; 
-          repVal,dummy = repDict[repVar].split("*",1)
-          repVal = int(repVal)
-      assert repVar != "", "No repeatable variable."
-      for v in repDict:
-        if v == repVar: continue
-        repDict[v] = symAddUp(symSetEqs([repDict[v]], allVars, {repVar: repVal}, D)[0],D)
-        print("After replace "+str(repDict))
-      varDict[repVar] = int(repDict[repVar].split("*")[0])
-      del repDict[repVar]
-    
-    outVec = []
-    for i in range(n):
-      outVec.append(varDict["x"+str(i)])
-      
-    print("  final result: "+str(outVec))
-    
-    
-    return outVec
- 
-
-def printNumSolMat():
-  """
-  Computes how many solutions the equation Ax=b for given A,b has.
-  Uses brute force on x.
-  Outputs this both to the screen as to a file.
-
-  Returns
-  -------
-  None
-  """
-  #menuD = [ 4,8,16,32 ]
-  #menuN = [ 3,5 ]
-  #repNum = 10000
-  menuD = [ 8 ]
-  menuN = [ 3 ]
-  repNum = 100
-  
-  prefix = "_matInv"; prefixFull = "_matInvFull"
-  saveState = {}; saveStateFull = {}
-  outStr = ""; fullOut = ""
-  plotState(prefix,saveState,outStr)  
-  
-  for n in menuN:  
-    for D in menuD:
-      allNumSol = { i:0 for i in range((D//2)**n+1) }
-      # generate random equations
-      for repCnt in range(repNum):
-        # generate a random equation
-        A = rndMatOdd(n, D)
-        b = rndVecOdd(n, D)   
-        numSol = 0
-        for tstX in range((D//2)**n):
-          x = []
-          for i in range(n):
-            x.append(2*(tstX % (D//2))+1)
-            tstX //= (D//2)
-          # test our equation
-          outB = applyMatVecOdd(A,x,D)
-          if outB == b: 
-            numSol += 1
-        # check how many solutions we have
-        allNumSol[numSol] += 1
-        
-        if (repCnt % 512) == 0:      
-          outStr = "\nRun n={} D={} with rep={}\n\n".format(n,D,repCnt)
-          # output the number of solutions
-          numOut = 0
-          for k in range((D//2)**n+1): 
-            if allNumSol[k] == 0: continue
-            outStr += "{} & {} ".format(k,allNumSol[k])
-            outStr += "\\\\\n" if (numOut % 5) == 4 else "&   "
-            numOut += 1
-          if outStr != "": outStr += "\\\\\n"
-          plotState(prefix,saveState,outStr)  
-      # end for repCnt    
-      
-      outStr = "\nRun n={} D={} with rep={}\n\n".format(n,D,repCnt)
-      # output the number of solutions
-      numOut = 0
-      for k in range((D//2)**n+1): 
-        if allNumSol[k] == 0: continue
-        outStr += "{} & {} ".format(k,allNumSol[k])
-        outStr += "\\\\\n" if (numOut % 5) == 4 else "&   "
-        numOut += 1
-      if outStr != "": outStr += "\\\\\n"
-      
-      fullOut += outStr
-      plotState(prefix,saveState,outStr)    
-      plotState(prefixFull,saveStateFull,fullOut)
-
-
-def isMatSolvable(A,numTries,D):
-  """
-  Checks if a matrix A is numTries-computationally solvable.
-
-  Parameters
-  ----------
-  A : list
-    Matrix as a list of list over flipInts.
-  numTries : int
-    Number of repetitions.
-  D : int
-    Number generating the corresponding FlipInt.
-
-  Returns
-  -------
-  bool
-    True iff the matrix A is numTries-computationally solvable.
-  """
-  s = len(A)
-  assert (s % 2) == 1, "s is not odd with {}".format(s)
-  for i in range(s):
-    assert isVec(A[i],D), "No Odd Vector at {} for {}".format(i,A[i])
-  for t in range(numTries):
-    b = rndVecOdd(s,D); 
-    # check if invertible
-    try:
-      y = solveMatVec(A,b,D)    
-      # check if y is a valid solution
-      for i in range(s):
-        if not(isElem(y[i],D)): return False
-      # check if the solution solves the original equation
-      x = applyMatVecPlain(A,y,D)
-      if x != b: return False
-    except AssertionError: return False
-  # end for t
-  return True
-
-
-def printNumMatSolveable():
-  """
-  Verifies how many trials we can do with the definition of k-computally solvable matrix
-  on random matrices
-
-  Returns
-  -------
-  None
-  """
-  
-  def printAll(final=False):
-    nonlocal outStr
-    nonlocal funOut
-    
-    # output the number of solutions
-    curLine = ""
-    numOut = 0
-    for k in sorted(allNumSol): 
-      curLine += "{} & {} ".format(k,allNumSol[k])
-      curLine += "\\\\\n" if (numOut % 10) == 9 else "&   "
-      numOut += 1
-    if final: 
-      funOut += "\n%Run n={} D={} with rep={}\n".format(n,D,repCnt)
-      funOut += curLine + "\n"
-    outStr += "\nRun n={} D={} with rep={}\n".format(n,D,repCnt)
-    if final: outStr += "\n\nFINAL START\n"
-    outStr += funOut + "\n"
-    if final: outStr += "FINAL END\n\n"
-    if final: print("\nRun n={} D={} with rep={}".format(n,D,repCnt))
-    plotState(prefix,saveState,outStr)  
-  
-  #repNum = 10000
-  menuD = [ 8,16,256,2048 ]
-  # menuN = [ 3,5,11,45,65,73,97,1001  ]
-  menuN = [ 7,9  ]
-  repNum = 100000
-  
-  prefix = "solveMat"; 
-  saveState = {}; 
-  outStr = ""; 
-  funOut = ""
-  plotState(prefix,saveState,outStr)  
-  
-  for n in menuN:  
-    for D in menuD:
-      allNumSol = { }
-      # generate random equations
-      for repCnt in range(repNum):
-        # generate a random equation
-        A = rndMatOdd(n, D)
-        solCnt = 0
-        aCopy = deepcopy(A)
-        while solCnt < 100:
-          if not isMatSolvable(A, 1, D): break
-          A = deepcopy(aCopy)
-          solCnt += 1
-        if solCnt in allNumSol: allNumSol[solCnt] += 1
-        else: allNumSol[solCnt] = 1
-        
-        if (repCnt % 512) == 0: printAll()
-      # end D
-      printAll(final=True)
-  # end for n
-  printAll(final=True)    
-  
-  
-def printNumVecResponsive():
-    """
-    Verifies how many trials we can do with the definition of r-responsiveness for a given matrix A
-
-    Returns
-    -------
-    None
-    """
-    
-    def printAll(final=False):
-      nonlocal outStr, funOut, statOut
-      
-      # output the number of solutions
-      curLine = "{} & {} & {} ".format(n,d,allNumNoSol)
-      numOut = 0
-      for k in sorted(rResponse): 
-        curLine += "& {} & {}".format(k,rResponse[k])
-        curLine += "\\\\\n  & & " if (numOut % 8) == 7 else "  "
-        numOut += 1
-      if (numOut % 8) != 0: curLine += "\\\\\n"   
-      if final: 
-        funOut += "\n%Run n={} d={} with rep={}\n".format(n,d,repCnt)
-        funOut += curLine + "\n\\hline"
-      outStr += "\nRun n={} d={} with rep={}\n".format(n,d,repCnt)
-      outStr += "{}\n".format(curLine)
-      
-      # output statistical data
-      if final: 
-        statList = []
-        for k in range(max(rResponse)+1): 
-          statList.append(0 if not k in rResponse else rResponse[k])
-        # output and give statistical evaluation
-        statOut += "\n%Stat n={} d={} with rep={} and sum={}\n".format(n,d,repCnt,sum(statList))
-        statOut += str(statList) + "\n"
-      
-      if final: outStr += "\n\nFINAL START\n"
-      outStr += funOut + "\n"
-      outStr += statOut + "\n"
-      if final: outStr += "FINAL END\n\n"
-      if final: print("\nRun n={} d={} with rep={}".format(n,d,repCnt))
-      plotState(prefix,saveState,outStr)  
-    # end def printAll
-    ##################
-    
-    #repNum = 10000
-    menu_d = [ 2, 3, 7, 10, 128, 256, 384, 512 ]
-    #menu_d = [ 2, 3, 7, 10, 256, 512 ]
-    menuN = [ 3,5,7,11,15,31 ]
-    repNum = 100000
-    
-    prefix = "solveMat"; 
-    saveState = {}; 
-    outStr = ""; funOut = ""; statOut = ""
-    plotState(prefix,saveState,outStr)  
-    
-    for n in menuN:  
-      for d in menu_d:
-        D = 2**(d+1)
-        allNumNoSol = 0
-        rResponse = { }
-        # generate random equations
-        for repCnt in range(repNum):
-          # generate a random equation
-          A = rndMatOdd(n, D)
-          aCopy = deepcopy(A)
-          if not isMatSolvable(A, 1, D): allNumNoSol += 1; continue
-          A = deepcopy(aCopy)
-          # find r-responsiveness
-          rResCnt = 0
-          for loopCnt in range(100):
-            A = deepcopy(aCopy)
-            if isMatSolvable(A, 1, D): rResCnt += 1
-          if not rResCnt in rResponse: rResponse[rResCnt] = 0
-          rResponse[rResCnt] += 1
-            
-          if (repCnt % 512) == 0: printAll()
-        # end D
-        printAll(final=True)
-    # end for n
-    printAll(final=True)   
-
-#printNumSolMat()
 #testAll()
-#printSym()
-#rndMatTest()
-#printNumMatSolveable()
-printNumVecResponsive()
+trmRun()
 
+
+ 
