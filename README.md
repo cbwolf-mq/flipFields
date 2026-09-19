@@ -1,4 +1,5 @@
 Sample implementation for FlipFields, FlipInts, and FlipPolys in Python.
+* 2026-09-19: Version 1.15
 * 2026-08-10: Version 1.10
 * 2026-07-03: Version 1.07
 * 2026-06-26: Version 1.05
