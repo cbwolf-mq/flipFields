@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Implementation of FlipFields
-Version 1.07
-Date 2026-07-03
+Version 1.15
+Date 2026-09-19
 
 @author: Christopher Wolf, chris/at/Christopher-Wolf.de
 
