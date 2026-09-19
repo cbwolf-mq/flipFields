@@ -4310,14 +4310,637 @@ def testAll():
       ]
   C = symMultMatMat(B,A,16)
   assert str(C) == "[['1*', '3*', '1*'], ['1*', '3*', '1*'], ['1*', '3*', '1*']]", "Wrong output symMultMatMat.3"
-    
+  
+  # test binary matrix solver
+  A = [
+    [0, 1, 0],
+    [0, 1, 1],
+    [1, 0, 0]
+  ]
+
+  b = [0, 1, 0]
+  # solution is [0, 0, 1]
+  x0, N = matSolveBinary(A,b)
+  assert (x0 == [0, 0, 1]) and (N == []), "Wrong solution for matSolveBinary.1 with x0={} and N={}".format(x0,N)
+  
+  # no solution
+  A = [
+    [1, 0, 1],
+    [0, 1, 1],
+    [1, 1, 0]
+  ]
+  b = [0, 0, 1]
+  res = matSolveBinary(A,b)
+  assert (res == None), "Wrong solution for matSolveBinary.2 with res={}".format(res)
+  
+  # Generates a space of possible solutions
+  A = [
+    [1, 1, 0],
+    [0, 1, 1],
+    [1, 0, 1]
+  ]
+  b = [1, 0, 1]
+  x0, N = matSolveBinary(A,b)
+  assert (x0 == [1, 0, 0]) and (N == [[1,1,1]]), "Wrong solution for matSolveBinary.3 with x0={} and N={}".format(x0,N)
+  
+  # 2-dimensional solution space
+  A = [
+    [1, 0, 1, 0, 1],
+    [0, 1, 1, 1, 0],
+    [1, 1, 0, 1, 1],
+    [0, 1, 1, 1, 0],
+    [1, 0, 1, 0, 1]
+  ]
+  b = [1, 0, 1, 0, 1]
+  x0, N = matSolveBinary(A,b)
+  assert (x0 == [1, 0, 0, 0, 0]) and (N == [[1, 1, 1, 0, 0], [0, 1, 0, 1, 0], [1, 0, 0, 0, 1]]), "Wrong solution for matSolveBinary.4 with x0={} and N={}".format(x0,N)
+  
+  #########################
+  A = [
+    [1, 1, 1],
+    [1, 3, 1],
+    [1, 1, 3],
+  ]
+  b = [3, 7, 7]
+  z0 = [3, 0, 0]
+  basis = [
+    [2, 0, 2],
+    [2, 2, 0],
+  ]
+  x0, N = matSolveBinaryLift(A,b,z0,basis,2)
+  assert (x0 == [7, 2, 2]) and (N == [[4, 4, 0], [4, 0, 4]]), "Wrong solution matSolveBinaryLift.1 for x0={} and N={}".format(x0,N)
+  
+  # Second testcase
+  A = [
+    [1, 1, 1],
+    [1, 3, 1],
+    [1, 1, 3],
+  ]
+  b = [3, 7, 3]
+
+  # Solution space modulo 4
+  z0 = [3, 0, 0]
+  basis = [
+    [2, 0, 2],
+    [2, 2, 0],
+  ]
+  x0, N = matSolveBinaryLift(A,b,z0,basis,2)
+  assert (x0 == [1, 2, 0]) and (N==[[4, 4, 0], [4, 0, 4]]), "Wrong solution matSolveBinaryLift.2 for x0={} and N={}".format(x0,N)
+  
+  # Further testcase, no solution
+  A = [
+    [7, 3, 7],
+    [1, 3, 5],
+    [7, 7, 7],
+  ]
+  b = [2, 0, 2]
+  z0 = [2, 1, 3]
+  basis = [
+    [0, 2, 2],
+    [1, 0, 3],
+  ]
+  res = matSolveBinaryLift(A,b,z0,basis,2)
+  assert res==None, "Wrong solution matSolveBinaryLift.3 for res={}".format(res)
+  
+  # test case with 4 solutions for j=2 and 2 solutions for j=3
+  A = [
+    [2, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ]
+  b = [4, 0, 0]
+  z0 = [0, 0, 0]
+  basis = [
+    [2, 0, 0],
+  ]
+  x0, N = matSolveBinaryLift(A,b,z0,basis,2)
+  assert  (x0==[2, 0, 0]) and (N==[[4, 0, 0]]), "Wrong solution matSolveBinaryLift.2 for x0={} and N={}".format(x0,N)
+  
+  #####################################################################
+  A = [
+    [1, 1, 1],
+    [1, 3, 1],
+    [1, 1, 3],
+  ]
+  b = [1, 1, 1]
+  d = 4
+  z0,N = matSolveLift(A,b,d)
+  assert  (z0==[1, 0, 0]) and (N==[[8, 8, 0], [8, 0, 8]]), "Wrong solution matSolveLift.1 for z0={} and N={}".format(z0,N)
+  
+  A = [
+    [1, 1, 0],
+    [0, 1, 1],
+    [1, 0, 1],
+  ]
+  b = [3, 5, 2]
+  d = 4
+  z0,N = matSolveLift(A,b,d)
+  assert  (z0==[0, 3, 2]) and (N==[[8, 8, 8]]), "Wrong solution matSolveLift.2 for z0={} and N={}".format(z0,N)
+  
+  A = [
+    [1, 1, 0],
+    [0, 1, 1],
+    [1, 1, 1],
+  ]
+  b = [5, 8, 10]
+  d = 4
+  z0,N = matSolveLift(A,b,d)
+  assert  (z0==[2, 3, 5]) and (N==[]), "Wrong solution matSolveLift.3 for z0={} and N={}".format(z0,N)
+  
+  
+  d = 5
+  A = [
+    [19,  9,  3],
+    [27, 22, 20],
+    [10, 22,  7],
+  ]
+  b = [23, 7, 6]
+  z0,N = matSolveLift(A,b,d)
+  assert  (z0==[13, 4, 20]) and (N==[]), "Wrong solution matSolveLift.4 for z0={} and N={}".format(z0,N)
+  
+  ###################################################################
+  M = [
+    [19,  9,  3],
+    [27, 23, 21],
+    [11, 23,  7],
+  ]
+  v = [23, 7, 5]
+  d = 4
+  x0, basis = matSolveFlipInt(M, v, d)
+  assert (x0 == [29, 11, 15]) and (basis == [[16, 16, 0], [16, 0, 16]]), \
+    "Wrong solution with matSolveFlipInt.1 with x0={} and basis={}".format(x0,basis)
+
+  # same input, d = 5 now
+  M = [
+    [19,  9,  3],
+    [27, 23, 21],
+    [11, 23,  7],
+  ]
+  v = [23, 7, 5]
+  d = 5
+  x0, basis = matSolveFlipInt(M, v, d)
+  assert (x0==[45, 11, 31]) and (basis==[[32, 32, 0], [32, 0, 32]]), \
+    "Wrong solution with matSolveFlipInt.1 with x0={} and basis={}".format(x0,basis)
+
+  M = [
+    [1, 1, 1],
+    [1, 3, 1],
+    [1, 1, 3],
+  ]
+  v = [3, 5, 5]
+  d = 4
+  x0, basis = matSolveFlipInt(M, v, d)
+  assert (x0==[1, 1, 1]) and (basis==[[16, 16, 0], [16, 0, 16]]), \
+    "Wrong solution with matSolveFlipInt.2 with x0={} and basis={}".format(x0,basis)  
+  
+  M = [
+    [3, 1, 1, 1, 1],
+    [1, 3, 1, 1, 1],
+    [1, 1, 3, 1, 1],
+    [1, 1, 1, 3, 1],
+    [1, 1, 1, 1, 3],
+  ]
+  v = [7, 7, 7, 7, 7]
+  d = 4
+  x0, basis = matSolveFlipInt(M, v, d)
+  assert (x0==[1, 1, 1, 1, 1] and basis==[[16, 16, 0, 0, 0], [16, 0, 16, 0, 0], [16, 0, 0, 16, 0], [16, 0, 0, 0, 16]]), \
+    "Wrong solution with matSolveFlipInt.3 with x0={} and basis={}".format(x0,basis)  
+  
   # done
   print("Done Testing FlipInts")
   return
-               
 
-#testAll()
-trmRun()
+####################################################################################               
+
+def matSolveBinary(A, b):
+  """
+  Solve A x = b over GF(2).
+
+  !!! Computations are not done in FlipInts but in the Integers !!!
+
+  Returns
+  -------
+  None, None
+      If the system is inconsistent and hence has no solution
+
+  (x0, basis)
+      If the system is consistent, where
+           x = x0 + sum(lambda_i * basis[i])
+
+      with lambda_i in GF(2).
+
+      x0 is one particular solution and basis is a basis
+      of the homogeneous solution space ker(A).
+  """
+
+  m = len(A)
+  n = len(A[0])
+    
+  # check if the input is from GF(2)
+  for i in range(m):
+    for j in range(n):
+      assert A[i][j] == (A[i][j] % 2), "Non-binary input for A_(i,j) with i,j={},{}, b_j={}".format(i,j,A[i][j])
+  for j in range(m):
+    assert b[j] == (b[j] % 2), "Non-binary input for b_j with j={}, b_j={}".format(j,b[j])
+
+  # Augmented matrix [A | b]
+  M = [ 
+        [(A[i][j] & 1) for j in range(n)] + [b[i] & 1] 
+        for i in range(m)
+      ]
+
+  pivot_cols = []
+  row = 0
+
+  # ---------------------------------------------------------
+  # Gauss-Jordan elimination over GF(2)
+  # ---------------------------------------------------------
+  for col in range(n):
+    # Find pivot
+    pivot = None
+    for i in range(row, m):
+      if M[i][col] == 1:
+        pivot = i
+        break
+
+    if pivot is None: continue
+
+    # Swap pivot row into position
+    M[row], M[pivot] = M[pivot], M[row]
+
+    pivot_cols.append(col)
+
+    # Eliminate 1 from all other rows
+    for i in range(m):
+      if i != row and M[i][col] == 1:
+        for j in range(n + 1): M[i][j] ^= M[row][j]
+
+    row += 1
+    if row == m: break
+
+  # ---------------------------------------------------------
+  # Check consistency
+  # ---------------------------------------------------------
+  for i in range(row, m):
+    if all(M[i][j] == 0 for j in range(n)) and M[i][n] == 1: return None
+
+  pivot_set = set(pivot_cols)
+  # ---------------------------------------------------------
+  # Particular solution
+  # Set all free variables to zero.
+  # ---------------------------------------------------------
+  x0 = [0] * n
+  for i, col in enumerate(pivot_cols):
+    x0[col] = M[i][n]
+
+  # ---------------------------------------------------------
+  # Nullspace basis
+  # ---------------------------------------------------------
+  free_cols = [
+    col for col in range(n)
+    if col not in pivot_set
+  ]
+
+  basis = []
+  for free_col in free_cols:
+    v = [0] * n
+    v[free_col] = 1
+
+    # Determine pivot variables from RREF
+    for i, pivot_col in enumerate(pivot_cols):
+      v[pivot_col] = M[i][free_col]
+
+    basis.append(v)
+
+  return x0, basis
+
+
+def matSolveBinaryLift(A, b, z0, basis, j):
+  """
+  Lift the complete affine solution space
+       z = z0 + B lambda  (mod 2^j)
+  to modulo 2^(j+1).
+
+  Existing parameters lambda are retained.
+  New binary correction variables delta are introduced.
+  
+  !!! Computations are not done in FlipInts but in the Integers !!!
+
+  Returns
+  -------
+  None
+      If no solution exists at the next bit.
+
+  (z0_new, basis_new)
+      Complete affine solution space modulo 2^(j+1).
+  """
+
+  s = len(A)
+  t = len(basis)
+
+  old_modulus = 2 ** j
+  new_modulus = 2 ** (j + 1)
+
+  # B is an s x t matrix whose columns are the
+  # existing affine directions.
+  B = [
+      [basis[col][row] for col in range(t)]
+      for row in range(s)
+  ]
+
+  # ---------------------------------------------------------
+  # Compute rho = (b - A z0) / 2^j mod 2
+  # ---------------------------------------------------------
+  rho = []
+
+  for i in range(s):
+    Az0 = sum(A[i][k] * z0[k] for k in range(s))
+    residual = b[i] - Az0
+
+    # z0 must be a solution modulo 2^j
+    # z0 is not a solution modulo 2^j"
+    assert (residual % old_modulus) == 0, "z0 is not a solution modulo 2^j for {} at i={} and Az0={}".format(residual,i,Az0)
+    rho.append((residual // old_modulus) & 1)
+
+  # ---------------------------------------------------------
+  # Compute C = A B / 2^j mod 2
+  #
+  # Every column of A B is divisible by 2^j because
+  # every basis vector represents a valid direction of
+  # the solution space modulo 2^j.
+  # ---------------------------------------------------------
+  C = []
+
+  for i in range(s):
+    row_C = []
+
+    for col in range(t):
+      AB = sum( A[i][k] * B[k][col] for k in range(s) )
+      assert AB % old_modulus == 0, "Affine basis is not a valid solution direction modulo 2^j with {}".format(AB)
+      row_C.append((AB // old_modulus) & 1)
+    C.append(row_C)
+
+  # ---------------------------------------------------------
+  # A2 = A mod 2
+  # ---------------------------------------------------------
+  A2 = [
+      [A[i][k] & 1 for k in range(s)]
+      for i in range(s)
+  ]
+
+  # ---------------------------------------------------------
+  # Construct the combined binary system
+  #
+  #       C lambda + A2 delta = rho
+  #
+  # Unknown vector:
+  #
+  #       y = (lambda, delta)
+  #
+  # ---------------------------------------------------------
+  combined_A = []
+
+  for i in range(s):
+    row_combined = []
+
+    # Existing parameters lambda
+    row_combined.extend(C[i])
+
+    # New correction variables delta
+    row_combined.extend(A2[i])
+
+    combined_A.append(row_combined)
+
+  # ---------------------------------------------------------
+  # Solve the combined binary system
+  # ---------------------------------------------------------
+  result = matSolveBinary(combined_A, rho)
+
+  if result is None: return None
+  y0, y_basis = result
+
+  # Number of existing parameters
+  t_old = t
+
+  # ---------------------------------------------------------
+  # Particular solution
+  #
+  # y0 = (lambda0, delta0)
+  # ---------------------------------------------------------
+  lambda0 = y0[:t_old]
+  delta0 = y0[t_old:]
+
+  # ---------------------------------------------------------
+  # New representative:
+  #
+  # z0_new = z0 + B lambda0 + 2^j delta0
+  # ---------------------------------------------------------
+  z0_new = []
+
+  for i in range(s):
+    value = z0[i]
+
+    # Existing affine parameters
+    for l in range(t_old):
+      value += B[i][l] * lambda0[l]
+
+    # New correction
+    value += old_modulus * delta0[i]
+
+    z0_new.append(value % new_modulus)
+
+  # ---------------------------------------------------------
+  # Transform every free direction of the combined
+  # binary system into a direction of z.
+  #
+  # y_basis = (lambda_direction, delta_direction)
+  #
+  # Corresponding z-direction:
+  #
+  #       B lambda_direction + 2^j delta_direction
+  # ---------------------------------------------------------
+  basis_new = []
+
+  for v in y_basis:
+    lambda_v = v[:t_old]
+    delta_v = v[t_old:]
+
+    direction = []
+
+    for i in range(s):
+      value = 0
+
+      # Existing parameter direction
+      for l in range(t_old): value += B[i][l] * lambda_v[l]
+
+      # New bit
+      value += old_modulus * delta_v[i]
+      direction.append(value % new_modulus)
+
+    basis_new.append(direction)
+
+  return z0_new, basis_new
+
+
+def matSolveLift(A, b, d):
+  """
+  Solve
+      A z = b (mod 2^d)
+  and return the complete affine solution space.
+
+  The result is represented as
+      z = z0 + sum(lambda_i * basis[i]) mod 2^d
+  with lambda_i in GF(2).
+
+  !!! Computations are not done in FlipInts but in the Integers !!!
+
+  Returns
+  -------
+  None
+      If the system is inconsistent.
+
+  (z0, basis)
+      Complete affine parameterization.
+  """
+
+  if d < 1:
+    raise ValueError("d must be >= 1")
+
+  s = len(A)
+
+  # ---------------------------------------------------------
+  # Level 1: solve modulo 2
+  # ---------------------------------------------------------
+  A2 = [
+    [A[i][j] & 1 for j in range(s)]
+    for i in range(s)
+  ]
+
+  b2 = [x & 1 for x in b]
+
+  result = matSolveBinary(A2, b2)
+  if result is None: return None
+  z0, basis = result
+
+  # ---------------------------------------------------------
+  # Lift one bit at a time:
+  #
+  # mod 2 -> mod 4 -> mod 8 -> ... -> mod 2^d
+  # ---------------------------------------------------------
+  for j in range(1, d):
+    result = matSolveBinaryLift(A, b, z0, basis, j)
+    if result is None: return None
+    z0, basis = result
+
+  return z0, basis
+
+
+def matSolveFlipInt(M, v, d):
+  """
+  Solve
+      M x = v (mod 2^(d+1))
+  over FlipInts_d, i.e. with all entries of M, v and x odd.
+
+  The solver reduces the FlipInt system via
+      x = 2 z + 1
+  to the integer system
+      M z = b' (mod 2^d),
+  where
+      b' = (v - M*1) / 2  (mod 2^d).
+
+  It then calls matSolveLift().
+
+  Returns
+  -------
+  None
+      If the system has no solution.
+
+  (x0, basis)
+      Affine representation of the solution space over FlipInts:
+          x = x0 + sum(lambda_i * basis[i])
+              (mod 2^(d+1))
+      with lambda_i in GF(2).
+  """
+  assert d >= 1, "d must be at least 1 but is "+str(d)
+  D = 2**(d+1)
+
+  s = len(M)
+  modulus = 2 ** (d + 1)
+  z_modulus = 2 ** d
+
+  # Check dimensions
+  assert len(v) == s, "Dimension mismatch between M and v"
+  for i in range(s):
+    assert len(M[i]) == s, "M must be square"
+
+  # ---------------------------------------------------------
+  # Check that M and v are FlipInts:
+  #     odd modulo 2^(d+1)
+  # ---------------------------------------------------------
+  for i in range(s):
+    for j in range(s):
+      assert isElem(M[i][j],D), "M contains a non-FlipInt entry at ({},{}) with {}".format(i,j,M[i][j])
+  for i in range(s):
+    assert isElem(v[i],D), "v contains a non-FlipInt entry at {} with {}".format(i,v[i])
+
+  # ---------------------------------------------------------
+  # Compute M * 1^s
+  #
+  # ---------------------------------------------------------
+
+  M_one = [ sum(M[i][j] for j in range(s)) for i in range(s) ]
+
+  # ---------------------------------------------------------
+  # Compute
+  #     b' = (v - M*1) / 2 mod 2^d
+  # Division by 2 is performed over the integers AFTER
+  # verifying that the numerator is even.
+  # ---------------------------------------------------------
+
+  b_prime = []
+  for i in range(s):
+    numerator = v[i] - M_one[i]
+    assert numerator % 2 == 0, "v - M*1 must be even at row {}".format(i)
+    b_prime.append((numerator // 2) % z_modulus)
+
+  # ---------------------------------------------------------
+  # Solve
+  #     M z = b' mod 2^d
+  # using the existing lifting solver.
+  # ---------------------------------------------------------
+
+  result = matSolveLift(M, b_prime, d)
+  if result is None: return None
+  z0, z_basis = result
+
+  # ---------------------------------------------------------
+  # Transform
+  #     z = z0 + sum(lambda_i * z_basis[i])
+  # into
+  #     x = 2z + 1.
+  #
+  # Particular solution:
+  #     x0 = 2*z0 + 1
+  # ---------------------------------------------------------
+  x0 = [ (2 * z0[i] + 1) % modulus  for i in range(s) ]
+
+  # ---------------------------------------------------------
+  # A direction z_basis gives
+  #     z -> z + z_basis
+  #
+  # and therefore
+  #     x -> x + 2*z_basis.
+  # ---------------------------------------------------------
+
+  x_basis = []
+  for direction in z_basis:
+    x_direction = [ (2 * direction[i]) % modulus for i in range(s) ]
+    x_basis.append(x_direction)
+
+  return x0, x_basis
+
+
+testAll()
 
 
  
